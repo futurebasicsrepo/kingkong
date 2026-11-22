@@ -14,7 +14,7 @@ export class Hud {
       'beforeend',
       `<div id="hud" class="hidden">
         <div class="hud-tl">
-          <div class="who"><b>BIG JAWN</b><span id="score">0</span></div>
+          <div class="who"><b></b><span id="score">0</span></div>
           <div class="bar hp"><i id="hp"></i></div>
           <div class="bar rage"><i id="rage"></i><em id="rage-tip">ROAR</em></div>
         </div>
@@ -85,6 +85,10 @@ export class Hud {
 
   show(on) {
     this.el.classList.toggle('hidden', !on);
+  }
+
+  setName(name) {
+    this.el.querySelector('.who b').textContent = name.toUpperCase();
   }
 
   // Draws the parts of the map that never change, once.
@@ -314,8 +318,8 @@ export class Screens {
 
   controls(touch) {
     return touch
-      ? `<ul class="keys"><li><b>Left thumb</b> move</li><li><b>Drag right side</b> look</li><li><b>PUNCH</b> tap for a three-hit combo</li><li><b>SLAM</b> shockwave, or dive from a jump</li><li><b>ROAR</b> when the orange bar is full</li></ul>`
-      : `<ul class="keys"><li><b>W A S D</b> move</li><li><b>Mouse drag</b> look</li><li><b>J</b> or <b>click</b> punch, tap for a combo</li><li><b>K</b> or <b>right-click</b> slam</li><li><b>Space</b> jump, then <b>K</b> to dive</li><li><b>L</b> roar when the orange bar is full</li></ul>`;
+      ? `<ul class="keys"><li><b>Left thumb</b> move</li><li><b>Drag right side</b> look</li><li><b>PUNCH</b> tap for a three-hit combo</li><li><b>SLAM</b> shockwave, or dive from a jump</li><li><b>ROAR</b> when the orange bar is full</li><li><b>Lean on a building</b> to climb it</li></ul>`
+      : `<ul class="keys"><li><b>W A S D</b> move</li><li><b>Mouse drag</b> look</li><li><b>J</b> or <b>click</b> punch, tap for a combo</li><li><b>K</b> or <b>right-click</b> slam</li><li><b>Space</b> jump, then <b>K</b> to dive</li><li><b>L</b> roar when the orange bar is full</li><li><b>Run into a building</b> to climb it</li></ul>`;
   }
 
   title() {
@@ -324,9 +328,24 @@ export class Screens {
         <h1>SILVERBACK</h1>
         <h2>WORLD TOUR</h2>
         <p>One very large ape. Eight cities. A lot of animals who had it coming.</p>
-        <button class="big" data-act="tour">PLAY</button>
+        <button class="big" data-act="select">PLAY</button>
         ${this.controls(this.game.input.touch)}
       </div>`;
+  }
+
+  // Choose your ape. The chosen one is standing in the scene behind this.
+  select({ apes, current }) {
+    const hex = (n) => '#' + n.toString(16).padStart(6, '0');
+    const cur = apes.find((a) => a.id === current) || apes[0];
+    const cards = apes
+      .map(
+        (a) => `<button class="ape ${a.id === current ? 'on' : ''}" data-act="pick:${a.id}" style="--a:${hex(a.scarf[0])};--b:${hex(a.scarf[1])}">
+          <i></i><b>${a.name}</b>
+        </button>`
+      )
+      .join('');
+    return `<div class="select"><div class="select-top"><small>CHOOSE YOUR APE</small><h2>${cur.name.toUpperCase()}</h2><p>${cur.line}</p></div>
+      <div class="select-bottom"><div class="apes">${cards}</div><button class="big" data-act="tour">NEXT</button></div></div>`;
   }
 
   tour({ cities }) {
@@ -335,12 +354,12 @@ export class Screens {
         (c, i) => `<button class="stop ${c.open ? 'open' : 'locked'}" ${c.open ? 'data-act="start"' : 'disabled'}>
           <i>${String(i + 1).padStart(2, '0')}</i>
           <b>${c.name}</b>
-          <span>${c.open ? c.rival : 'Rival: ???'}</span>
+          <span>${c.rival}</span>
           <em>${c.open ? 'PLAY NOW' : 'COMING SOON'}</em>
         </button>`
       )
       .join('');
-    return `<div class="tour"><small>THE ROUTE</small><h2>WORLD TOUR</h2><div class="stops">${cards}</div><button class="link" data-act="title">Back</button></div>`;
+    return `<div class="tour"><small>THE ROUTE</small><h2>WORLD TOUR</h2><div class="stops">${cards}</div><button class="link" data-act="select">Back</button></div>`;
   }
 
   pause({ muted, quality }) {
@@ -355,7 +374,7 @@ export class Screens {
   }
 
   dead() {
-    return `<div class="panel"><small>BIG JAWN IS DOWN</small><h2>KNOCKED OUT</h2><p>Shake it off. The tour is not over.</p><button class="big" data-act="retry">GET UP</button><button data-act="quit">Quit to title</button></div>`;
+    return `<div class="panel"><small>${this.game.player.name.toUpperCase()} IS DOWN</small><h2>KNOCKED OUT</h2><p>Shake it off. The tour is not over.</p><button class="big" data-act="retry">GET UP</button><button data-act="quit">Quit to title</button></div>`;
   }
 
   win({ stats, next }) {

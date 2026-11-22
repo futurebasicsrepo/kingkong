@@ -14,6 +14,14 @@ const _c = new THREE.Color();
 const UP = new THREE.Vector3(0, 1, 0);
 const RUBBLE = new THREE.Color(0x6f6a63);
 
+// Small things (paint, trunks, lamps, cars) are physically based on 'high'
+// and plain diffuse on phones, where their shine would not be worth its cost.
+const simpleMaterial = (opts) => {
+  if (!detail.low) return new THREE.MeshStandardMaterial(opts);
+  const { roughness, metalness, ...rest } = opts;
+  return new THREE.MeshLambertMaterial(rest);
+};
+
 // A city is a flat piece of land with rivers, a lot of box buildings drawn as
 // instances, and a few hand-built landmarks. This class owns the parts every
 // city shares: drawing, collision, and knocking buildings down. Each city file
@@ -41,6 +49,7 @@ export class City {
     this.cars = [];
     this.carCells = new Map();
     this.props = [];
+    this.propCount = {};
     this.propCells = new Map();
     this.dashes = [];
 
@@ -64,6 +73,7 @@ export class City {
       cos: Math.cos(rot),
       sin: Math.sin(rot),
       building,
+      y0: 0,
       dead: false,
       q: 0,
     };
@@ -110,7 +120,7 @@ export class City {
   resolveCircle(pos, r, feetY = 0) {
     let touched = null;
     this.forNear(pos.x - r, pos.z - r, pos.x + r, pos.z + r, (c) => {
-      if (feetY >= c.h - 0.5) return;
+      if (feetY >= c.h - 0.5 || feetY + 14 <= c.y0) return;
       const dx = pos.x - c.cx;
       const dz = pos.z - c.cz;
       let lx = dx * c.cos - dz * c.sin;
@@ -173,9 +183,24 @@ export class City {
       }
       if (t0 > t1) return;
       const y = lerp(ay, by, t0);
-      if (y < c.h && t0 < best) best = t0;
+      if (y < c.h && y >= c.y0 && t0 < best) best = t0;
     });
     return best;
+  }
+
+  // The highest roof under a point that is no higher than a character could
+  // step onto from feetY. 0 when there is nothing to stand on but the street.
+  roofAt(x, z, feetY) {
+    let top = 0;
+    this.forNear(x, z, x, z, (c) => {
+      if (c.h > feetY || c.h <= top) return;
+      const dx = x - c.cx;
+      const dz = z - c.cz;
+      const lx = dx * c.cos - dz * c.sin;
+      const lz = dx * c.sin + dz * c.cos;
+      if (Math.abs(lx) <= c.hx + 0.6 && Math.abs(lz) <= c.hz + 0.6) top = c.h;
+    });
+    return top;
   }
 
   // ---- land ------------------------------------------------------------
@@ -256,13 +281,14 @@ export class City {
     list.push(c);
   }
 
-  // Street furniture: kind is 'lamp' or 'signal'. It has no collision; it
-  // just folds flat when something big walks over it.
+  // Street furniture: kind names a model in GEO (lamp, signal, bench, bin,
+  // hydrant, shelter). It has no collision; it just folds flat when something
+  // big walks over it.
   addProp(kind, x, z, rot = 0) {
-    // Phones get the lamps but not the signals.
-    if (detail.low && kind === 'signal') return;
-    const list = this.props.filter((p) => p.kind === kind);
-    const p = { kind, x, z, rot, down: false, idx: list.length };
+    // Phones get the lamps and nothing else.
+    if (detail.low && kind !== 'lamp') return;
+    this.propCount[kind] = (this.propCount[kind] || 0) + 1;
+    const p = { kind, x, z, rot, down: false, idx: this.propCount[kind] - 1 };
     this.props.push(p);
     const k = cellKey(Math.floor(x / CELL), Math.floor(z / CELL));
     let cell = this.propCells.get(k);
@@ -284,6 +310,7 @@ export class City {
       d,
       h,
       rot: opts.rot || 0,
+      y: opts.y || 0,
       color: new THREE.Color(opts.color ?? 0xb0a090),
       baseColor: null,
       fixed: !!opts.fixed,
@@ -303,7 +330,7 @@ export class City {
     b.baseColor = b.color.clone();
     b.maxHp = b.hp = opts.hp ?? clamp((w * d * h) / 420, 18, 320);
     this.pending[style].push(b);
-    let y = h;
+    let y = b.y + h;
     let topW = w;
     let topD = d;
     for (const t of opts.tiers || []) {
@@ -322,9 +349,32 @@ export class City {
       this.addRoofPlant(b, topW, topD, y);
     }
     b.top = y + (b.spire ? b.spire.h : 0);
-    if (b.solid) b.collider = this.addCollider(x, z, w, d, b.top, b.rot, b);
+    b.colliders = [];
+    if (b.solid) {
+      // One collider for the body and one for each setback above it, so an
+      // ape can stand on every ledge and has to climb each wall.
+      b.collider = this.addCollider(x, z, w, d, b.y + h, b.rot, b);
+      b.collider.y0 = b.y;
+      b.colliders.push(b.collider);
+      for (const t of b.tiers) {
+        const c = this.addCollider(x, z, t.w, t.d, t.y + t.h, b.rot, b);
+        c.y0 = t.y;
+        c.tier = true;
+        b.colliders.push(c);
+      }
+    }
     this.buildings.push(b);
     return b;
+  }
+
+  // Fixes a plain box to a building at an offset from its centre and a
+  // height: a canopy, a sign, a water tank. It is drawn with the roof plant,
+  // so it shrinks away when the building comes down, and it has no collider.
+  addAttachment(b, ox, oz, w, d, h, y, color) {
+    if (detail.low) return;
+    const item = { style: 'plain', ox, oz, w, d, h, y, idx: -1, color: new THREE.Color(color), isRoof: true };
+    this.pending.plain.push(item);
+    b.roofs.push(item);
   }
 
   // The clutter every real roof carries: lift overruns and plant rooms on
@@ -378,7 +428,7 @@ export class City {
       this.group.add(mesh);
     }
     if (this.spires.length) {
-      const mesh = new THREE.InstancedMesh(GEO.cone(4), new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true, roughness: 0.35, metalness: 0.6 }), this.spires.length);
+      const mesh = new THREE.InstancedMesh(GEO.cone(4), simpleMaterial({ color: 0xffffff, flatShading: true, roughness: 0.35, metalness: 0.6 }), this.spires.length);
       mesh.castShadow = true;
       mesh.frustumCulled = false;
       this.meshes.spire = mesh;
@@ -406,7 +456,7 @@ export class City {
 
     // Lane markings: road paint, a little worn.
     if (this.dashes.length) {
-      const mesh = new THREE.InstancedMesh(boxGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 }), this.dashes.length);
+      const mesh = new THREE.InstancedMesh(boxGeo, simpleMaterial({ color: 0xffffff, roughness: 0.7 }), this.dashes.length);
       mesh.frustumCulled = false;
       mesh.receiveShadow = true;
       this.dashes.forEach((d, i) => {
@@ -420,7 +470,7 @@ export class City {
 
     // Trees: a trunk and a many-lobed crown each.
     if (this.trees.length) {
-      const trunk = new THREE.InstancedMesh(GEO.cyl(detail.low ? 4 : 6, 0.6), new THREE.MeshStandardMaterial({ color: 0x3d3027, roughness: 0.95 }), this.trees.length);
+      const trunk = new THREE.InstancedMesh(GEO.trunk(), simpleMaterial({ color: 0x3a2f27, roughness: 0.95 }), this.trees.length);
       const crown = new THREE.InstancedMesh(GEO.crown(), foliageMaterial(), this.trees.length);
       crown.castShadow = true;
       crown.receiveShadow = true;
@@ -433,8 +483,8 @@ export class City {
 
     // Parked cars: painted bodywork, and the glass, tyres and lamps.
     if (this.cars.length) {
-      const body = new THREE.InstancedMesh(GEO.carBody(), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.32, metalness: 0.55 }), this.cars.length);
-      const cabin = new THREE.InstancedMesh(GEO.carCabin(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.2, metalness: 0.5 }), this.cars.length);
+      const body = new THREE.InstancedMesh(GEO.carBody(), simpleMaterial({ color: 0xffffff, roughness: 0.32, metalness: 0.55 }), this.cars.length);
+      const cabin = new THREE.InstancedMesh(GEO.carCabin(), simpleMaterial({ vertexColors: true, roughness: 0.2, metalness: 0.5 }), this.cars.length);
       body.castShadow = !detail.low;
       body.receiveShadow = true;
       body.frustumCulled = cabin.frustumCulled = false;
@@ -445,10 +495,9 @@ export class City {
     }
 
     // Street lamps and traffic signals.
-    for (const kind of ['lamp', 'signal']) {
+    for (const kind of new Set(this.props.map((p) => p.kind))) {
       const list = this.props.filter((p) => p.kind === kind);
-      if (!list.length) continue;
-      const mesh = new THREE.InstancedMesh(GEO[kind](), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.5 }), list.length);
+      const mesh = new THREE.InstancedMesh(GEO[kind](), simpleMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.5 }), list.length);
       mesh.frustumCulled = false;
       this.meshes[kind] = mesh;
       for (const p of list) this.writeProp(p);
@@ -464,7 +513,7 @@ export class City {
     const jz = b.wobble > 0 ? Math.cos(b.t * 55) * b.wobble * 1.6 : 0;
     _q.setFromAxisAngle(UP, b.rot);
     const spread = 1 + (1 - b.scaleY) * 0.12;
-    _m.compose(_p.set(b.x + jx, 0, b.z + jz), _q, _s.set(b.w * spread, Math.max(0.01, b.h * b.scaleY), b.d * spread));
+    _m.compose(_p.set(b.x + jx, b.y, b.z + jz), _q, _s.set(b.w * spread, Math.max(0.01, b.h * b.scaleY), b.d * spread));
     b.mesh.setMatrixAt(b.idx, _m);
     b.mesh.setColorAt(b.idx, b.color);
     const k = clamp01((b.scaleY - 0.25) / 0.75);
@@ -538,7 +587,7 @@ export class City {
     const out = { hit: [], destroyed: [] };
     this.forNear(x - radius, z - radius, x + radius, z + radius, (c) => {
       const b = c.building;
-      if (!b || b.state !== 'up') return;
+      if (!b || b.state !== 'up' || c.tier) return;
       const dx = x - c.cx;
       const dz = z - c.cz;
       const lx = dx * c.cos - dz * c.sin;
@@ -556,7 +605,7 @@ export class City {
       if (b.hp <= 0) {
         b.state = 'falling';
         b.t = 0;
-        c.dead = true;
+        for (const bc of b.colliders) bc.dead = true;
         out.destroyed.push(b);
       } else {
         b.color.copy(b.baseColor).multiplyScalar(0.55 + 0.45 * (b.hp / b.maxHp));

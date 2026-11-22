@@ -1,8 +1,8 @@
 # Silverback: World Tour
 
-A browser brawler. One very large ape goes on tour through eight cities and batters the animals that run each one. The first stop, Philadelphia, is playable.
+A browser brawler, built phone-first for players aged about 8 to 16. One very large ape goes on tour through eight cities and batters the animals that run each one. The first stop, Philadelphia, is playable.
 
-Working title and character names are placeholders (the ape is "Big Jawn", the Philadelphia boss is "Baldwin", a bald eagle in an engineer's cap). The ape is an original character.
+There are five apes to play as: **Trevor, Lukas, Sloan, Calvin and Zo**. They play the same and differ in fur, scarf and gear. The game's title is still a working title. All characters are original.
 
 ```
 index.html            the game page
@@ -31,11 +31,37 @@ Everything is generated in code: no model, texture or audio files.
 | Roar (when the orange bar is full: stuns, then double damage) | L, R or Q | ROAR | B |
 | Pause / mute | Esc or P / M | II button | Start |
 
-Philadelphia runs: break out of the zoo, clear the raccoons off Eakins Oval below the Art Museum steps, swat the pigeons at Logan Circle, then fight the eagle at City Hall. Buildings, trees and parked cars can all be flattened; landmarks cannot. Pretzels heal.
+Philadelphia runs: break out of the zoo, clear the raccoons off Eakins Oval below the Art Museum steps, swat the pigeons at Logan Circle, then fight the eagle at City Hall.
+
+Other things to do:
+
+- **Climb.** Run into any building and keep pushing: the ape climbs it. Push toward the wall to go up, pull away to come down, jump to leap off, slam to dive. Towers with setbacks are climbed ledge by ledge.
+- **Rooftops.** Roofs can be stood on and run across. A dive from high up makes a much bigger crater.
+- **Wreck things.** Buildings, trees, street lamps and parked cars can all be flattened; landmarks cannot. A car kicked while an animal is in front of the ape flies at it.
+- **Pretzels** heal. Clearing an objective heals a little too.
+- There is a secret on Independence Mall.
 
 ## The tour
 
-Philadelphia, New York City, Santa Clara, San Francisco, London, Tokyo, Paris, Shanghai. Each later city needs a map file like `src/world/philadelphia.js`, its animals, and an entry in `TOUR` in `src/game.js`.
+| Stop | City | Rival |
+| --- | --- | --- |
+| 1 | Philadelphia (playable) | Baldwin, the Bald Eagle of Broad Street |
+| 2 | New York City | Bullion, the Wall Street Bull |
+| 3 | Santa Clara | Nugget, the Gold Rush Grizzly |
+| 4 | San Francisco | Barker, the Sea Lion of the Bay |
+| 5 | London | Regent, the Lion of Trafalgar |
+| 6 | Tokyo | Kabuto, the Giant Stag Beetle |
+| 7 | Paris | Chanticleer, the Rooster of Paris |
+| 8 | Shanghai | Huangpu, the Tiger of the Bund |
+
+Each later city needs a map file like `src/world/philadelphia.js`, its animals, and its entry opened in `TOUR` in `src/game.js`.
+
+## Phones
+
+- Two graphics tiers. Phones start on the lighter one; the pause menu switches.
+- The game watches its own frame rate and lowers the drawing resolution when a device cannot keep up, then raises it again when there is headroom.
+- On touch devices, starting a game asks for full screen and landscape where the browser allows it; a phone held upright is asked to turn sideways.
+- Hits and knocks rumble on phones that support vibration.
 
 ## Running it
 
@@ -52,10 +78,12 @@ npm test
 
 Handy URLs while developing:
 
-- `/?autoplay=1` skips the title. `&start=oval`, `&start=logan` or `&start=boss` jumps to that checkpoint. `&god=1` refills health when hit.
+- `/?autoplay=1` skips the title. `&start=oval`, `&start=logan` or `&start=boss` jumps to that checkpoint. `&god=1` refills health when hit. `&ape=zo` picks an ape. `&gov=0` turns the frame-rate governor off.
 - `/?quality=high` or `/?quality=low` forces the graphics tier (phones default to low; the pause menu has a toggle).
-- `/city.html?cam=x,y,z&look=x,y,z` shows the city alone. `/view.html?who=ape&pose=run` shows a character (`who`: ape, raccoon, thrower, pigeon, eagle).
+- `/city.html?cam=x,y,z&look=x,y,z` shows the city alone. `/view.html?who=ape&v=sloan&pose=run` shows a character (`who`: ape, raccoon, thrower, pigeon, eagle; `v`: which ape).
 
 ## Deploying
 
-Railway builds the `Dockerfile` (Vite build, then `node server.js`). The service needs no variables and no volume; `/health` answers `ok`.
+Railway project `kingkong`, service `silverback`: it builds the `Dockerfile` (Vite build, then `node server.js`). The service needs no variables and no volume; `/health` answers `ok`.
+
+`main` is the trunk. The Railway service currently follows the working branch so new work can be previewed before it is merged; point it at `main` once the game has a release to protect.

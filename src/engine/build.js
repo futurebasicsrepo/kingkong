@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { decorMaterial } from './materials.js';
+import { decorMaterial, detail } from './materials.js';
 
 // Set by the renderer before a city is built: on phones the instanced
 // models (trees, cars, street furniture) are swapped for much lighter ones.
-export const detail = { low: false };
+export { detail };
 
 // Shared primitive geometry. Everything in the game is built from these.
 const cache = new Map();
@@ -48,8 +48,8 @@ export const GEO = {
       const lobes = detail.low
         ? [[0, -0.05, 0, 0.82], [0.42, 0.12, 0.2, 0.6], [-0.38, 0.2, -0.22, 0.6], [0.02, 0.42, 0.02, 0.56]]
         : [
-            [0, 0, 0, 0.8], [0.52, -0.1, 0.12, 0.56], [-0.46, -0.05, 0.3, 0.55], [-0.2, -0.12, -0.52, 0.54],
-            [0.32, -0.08, -0.44, 0.5], [0.1, 0.44, 0.05, 0.56],
+            [0, 0.04, 0, 0.76], [0.56, -0.14, 0.14, 0.5], [-0.5, -0.1, 0.3, 0.5], [-0.16, -0.16, -0.56, 0.5],
+            [0.36, -0.1, -0.46, 0.46], [0.14, 0.48, 0.06, 0.5], [-0.32, 0.32, -0.14, 0.4],
           ];
       const hash = (x, y, z) => {
         const n = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453;
@@ -66,7 +66,7 @@ export const GEO = {
         const col = new Float32Array(pos.count * 3);
         for (let i = 0; i < pos.count; i++) {
           v.fromBufferAttribute(pos, i).normalize();
-          const bump = 1 + 0.2 * (hash(Math.round(v.x * 50), Math.round(v.y * 50), Math.round(v.z * 50) + lx * 9) - 0.5);
+          const bump = (1 + (detail.low ? 0.2 : 0.34) * (hash(Math.round(v.x * 50), Math.round(v.y * 50), Math.round(v.z * 50) + lx * 9) - 0.5)) * (v.y < -0.3 ? 0.82 : 1);
           n.copy(v);
           v.multiplyScalar(r * bump).add(n.clone().set(lx, ly, lz));
           pos.setXYZ(i, v.x, v.y, v.z);
@@ -81,6 +81,22 @@ export const GEO = {
         parts.push(g);
       }
       return mergeGeometries(parts, false);
+    }),
+
+  // A trunk one unit tall and one in radius at the foot, forking into limbs
+  // that reach up into the crown. Scaled per tree like the plain cylinder.
+  trunk: () =>
+    cached('trunk' + detail.low, () => {
+      if (detail.low) return new THREE.CylinderGeometry(0.6, 1, 1, 4).translate(0, 0.5, 0);
+      const mb = new MeshBuilder();
+      const bark = 0xffffff;
+      mb.cyl(1, 0.2, 0, 0, 0, bark, 7, 0.8);
+      mb.cyl(0.8, 0.82, 0, 0.18, 0, bark, 7, 0.7);
+      // Limbs: [turn, lean, length, thickness]
+      for (const [turn, lean, len, r] of [[0.4, 0.5, 0.55, 0.42], [2.5, 0.62, 0.5, 0.38], [4.3, 0.45, 0.58, 0.4], [1.5, 0.15, 0.6, 0.36]]) {
+        mb.add(GEO.cyl(5, 0.55), bark, 0, 0.9, 0, r, len, r, turn, 0, lean * 3.2);
+      }
+      return mb.geometry();
     }),
 
   // A parked car, split in two so the paint can take an instance colour
@@ -117,6 +133,62 @@ export const GEO = {
         mb.box(0.42, 0.13, 0.05, sx * 0.62, 0.62, 2.25, 0xf2ecd2);
         mb.box(0.4, 0.12, 0.05, sx * 0.64, 0.66, -2.25, 0x9c1414);
       }
+      return mb.geometry();
+    }),
+
+  // A box whose top is narrower than its base by the factor t: a mansard
+  // roof, a plinth, a battered wall.
+  frustum: (t = 0.6) =>
+    cached('frustum' + t, () => {
+      const g = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
+      const pos = g.attributes.position;
+      for (let i = 0; i < pos.count; i++) if (pos.getY(i) > 0.99) pos.setXYZ(i, pos.getX(i) * t, 1, pos.getZ(i) * t);
+      g.computeVertexNormals();
+      return g;
+    }),
+
+  // Street furniture, at human size. Each faces +z.
+  bench: () =>
+    cached('bench', () => {
+      const mb = new MeshBuilder();
+      const wood = 0x6b4a2f;
+      const iron = 0x26282a;
+      mb.box(2.0, 0.08, 0.5, 0, 0.42, 0, wood);
+      mb.box(2.0, 0.5, 0.07, 0, 0.55, -0.26, wood, 0, -0.15);
+      for (const x of [-0.85, 0.85]) mb.box(0.07, 0.45, 0.5, x, 0, 0, iron);
+      return mb.geometry();
+    }),
+  bin: () =>
+    cached('bin', () => {
+      const mb = new MeshBuilder();
+      mb.cyl(0.36, 0.95, 0, 0, 0, 0x2f4034, 8, 1.12);
+      mb.cyl(0.42, 0.08, 0, 0.95, 0, 0x1c1d1e, 8);
+      return mb.geometry();
+    }),
+  hydrant: () =>
+    cached('hydrant', () => {
+      const mb = new MeshBuilder();
+      const red = 0xb3261c;
+      mb.cyl(0.2, 0.62, 0, 0, 0, red, 7);
+      mb.dome(0.2, 0.16, 0, 0.62, 0, red, 7);
+      mb.box(0.62, 0.14, 0.14, 0, 0.4, 0, red);
+      mb.cyl(0.26, 0.07, 0, 0, 0, 0x7d7d7a, 7);
+      return mb.geometry();
+    }),
+  shelter: () =>
+    cached('shelter', () => {
+      const mb = new MeshBuilder();
+      const frame = 0x2c2f33;
+      const glass = 0x7f97a6;
+      mb.box(4.2, 0.12, 1.6, 0, 2.5, 0, frame);
+      mb.box(4.0, 2.3, 0.06, 0, 0.2, -0.72, glass);
+      for (const x of [-2.0, 2.0]) {
+        mb.box(0.1, 2.5, 0.1, x, 0, -0.72, frame);
+        mb.box(0.1, 2.5, 0.1, x, 0, 0.7, frame);
+      }
+      mb.box(0.06, 2.0, 1.3, -2.0, 0.3, 0, glass);
+      mb.box(2.6, 0.08, 0.4, 0.3, 0.5, -0.45, 0x6b4a2f);
+      mb.box(0.9, 1.5, 0.08, 1.5, 0.6, 0.72, 0xd8d2c0);
       return mb.geometry();
     }),
 
@@ -174,6 +246,10 @@ export class MeshBuilder {
   add(geo, color, x, y, z, sx = 1, sy = 1, sz = 1, ry = 0, rx = 0, rz = 0) {
     const g = geo.index ? geo.toNonIndexed() : geo.clone();
     if (g.attributes.uv) g.deleteAttribute('uv');
+    // Round shapes keep their smooth normals; pyramids, prisms and other
+    // few-sided shapes are faceted.
+    const sides = geo.parameters && (geo.parameters.radialSegments ?? geo.parameters.segments);
+    if ((sides && sides <= 5) || (geo.parameters && geo.parameters.detail === 0) || !g.attributes.normal) g.computeVertexNormals();
     _e.set(rx, ry, rz, 'YXZ');
     _q.setFromEuler(_e);
     _m.compose(_p.set(x, y, z), _q, _s.set(sx, sy, sz));
@@ -231,7 +307,6 @@ export class MeshBuilder {
     const geo = mergeGeometries(this.parts, false);
     for (const g of this.parts) g.dispose();
     this.parts = [];
-    geo.computeVertexNormals();
     return geo;
   }
 

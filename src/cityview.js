@@ -10,6 +10,8 @@ const look = (q.get('look') || '-100,0,-60').split(',').map(Number);
 stage.camera.position.set(cam[0], cam[1], cam[2]);
 stage.camera.lookAt(look[0], look[1], look[2]);
 addEventListener('resize', () => stage.resize());
+// Count every pass of a frame (shadows, post-processing), not just the last one.
+stage.renderer.info.autoReset = false;
 let last = performance.now();
 let frames = 0;
 function frame(now) {
@@ -17,11 +19,12 @@ function frame(now) {
   last = now;
   stage.setFocus(look[0], look[1], look[2]);
   city.update(dt);
+  stage.renderer.info.reset();
   stage.render(dt);
   if (++frames > 3) window.__ready = true;
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
-window.__info = () => stage.renderer.info.render;
+window.__info = () => ({ ...stage.renderer.info.render, programs: stage.renderer.info.programs.length, geometries: stage.renderer.info.memory.geometries });
 window.__city = city;
 window.__stage = stage;

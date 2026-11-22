@@ -7,21 +7,21 @@ import { Input } from './engine/input.js';
 import { ChaseCam } from './engine/camera.js';
 import { GEO } from './engine/build.js';
 import { clamp, rand } from './engine/util.js';
-import { Ape } from './actors/ape.js';
+import { Ape, APES } from './actors/ape.js';
 import { Raccoon, Pigeon } from './actors/enemies.js';
 import { Eagle } from './actors/eagle.js';
 import { Hud, Screens } from './ui/hud.js';
 
-// The tour, in order. Only the first stop is built so far.
+// The tour, in order, and who runs each city. Only the first stop is built so far.
 export const TOUR = [
   { name: 'Philadelphia', rival: 'Baldwin, the Bald Eagle of Broad Street', open: true },
-  { name: 'New York City' },
-  { name: 'Santa Clara' },
-  { name: 'San Francisco' },
-  { name: 'London' },
-  { name: 'Tokyo' },
-  { name: 'Paris' },
-  { name: 'Shanghai' },
+  { name: 'New York City', rival: 'Bullion, the Wall Street Bull' },
+  { name: 'Santa Clara', rival: 'Nugget, the Gold Rush Grizzly' },
+  { name: 'San Francisco', rival: 'Barker, the Sea Lion of the Bay' },
+  { name: 'London', rival: 'Regent, the Lion of Trafalgar' },
+  { name: 'Tokyo', rival: 'Kabuto, the Giant Stag Beetle' },
+  { name: 'Paris', rival: 'Chanticleer, the Rooster of Paris' },
+  { name: 'Shanghai', rival: 'Huangpu, the Tiger of the Bund' },
 ];
 
 const SCORE = { raccoon: 100, thrower: 130, pigeon: 120, eagle: 2500 };
@@ -44,8 +44,18 @@ export class Game {
     this.screens = new Screens(ui, this);
     this.input = new Input(canvas, ui);
     this.cam = new ChaseCam(this.stage.camera);
-    this.player = new Ape(this);
+    let pick = q.get('ape');
+    try {
+      pick = pick || localStorage.getItem('ape');
+    } catch {
+      /* private mode */
+    }
+    this.player = new Ape(this, APES.find((a) => a.id === pick) || APES[0]);
     this.stage.scene.add(this.player.root);
+    this.hud.setName(this.player.name);
+    this.missiles = [];
+    this.fps = { t: 0, n: 0, good: 0 };
+    this.governed = q.get('gov') !== '0';
 
     this.enemies = [];
     this.hazards = [];
@@ -109,9 +119,21 @@ export class Game {
     };
     this.onCarKicked = (c) => {
       const p = this.player;
-      const a = Math.atan2(c.x - p.pos.x, c.z - p.pos.z) + rand(-0.4, 0.4);
-      const sp = 24 + p.speed;
-      this.fx.chunk(c.x, 1.2, c.z, Math.sin(a) * sp, rand(16, 30), Math.cos(a) * sp, 1, c.color, { sx: 2.1, sy: 1.5, sz: 4.6, life: 2.4 });
+      const kick = Math.atan2(c.x - p.pos.x, c.z - p.pos.z);
+      // A kicked car flies at the nearest animal in front of him, if there is one.
+      const tgt = this.nearestEnemy(c.x, c.z, 70, kick, 1.1, 40);
+      if (tgt) {
+        const dx = tgt.pos.x - c.x;
+        const dz = tgt.pos.z - c.z;
+        const T = clamp(Math.hypot(dx, dz) / 60, 0.35, 1.3);
+        const ty = tgt.pos.y + tgt.height * 0.5;
+        this.fx.chunk(c.x, 1.2, c.z, dx / T, (ty - 1.2 + 30 * T * T) / T, dz / T, 1, c.color, { sx: 2.1, sy: 1.5, sz: 4.6, life: T + 1.2 });
+        this.missiles.push({ t: 0, T, tgt, x: tgt.pos.x, z: tgt.pos.z, dx: dx / (Math.hypot(dx, dz) || 1), dz: dz / (Math.hypot(dx, dz) || 1) });
+      } else {
+        const a = kick + rand(-0.4, 0.4);
+        const sp = 24 + p.speed;
+        this.fx.chunk(c.x, 1.2, c.z, Math.sin(a) * sp, rand(16, 30), Math.cos(a) * sp, 1, c.color, { sx: 2.1, sy: 1.5, sz: 4.6, life: 2.4 });
+      }
       this.audio.play('car');
       this.stats.score += 10;
       this.stats.bill += 28000;
@@ -144,8 +166,14 @@ export class Game {
   // ---- flow --------------------------------------------------------------
 
   action(name) {
+    if (name.startsWith('pick:')) return this.pickApe(name.slice(5));
     switch (name) {
+      case 'select':
+        this.showSelect();
+        break;
       case 'tour':
+        this.player.showcase = null;
+        this.state = 'title';
         this.screens.show('tour', { cities: TOUR });
         break;
       case 'title':
@@ -190,7 +218,45 @@ export class Game {
     }
   }
 
+  // The line-up: the chosen ape stands on the museum terrace while the
+  // player flicks through the five.
+  showSelect() {
+    const t = this.world.places.terrace;
+    this.state = 'select';
+    this.player.reset(t.x, t.z, this.world.places.terraceYaw ?? 0.86);
+    this.player.pos.y = this.world.groundHeight(t.x, t.z);
+    this.player.showcase = 'idle';
+    this.screens.show('select', { apes: APES, current: this.player.variant.id });
+  }
+
+  pickApe(id) {
+    const v = APES.find((a) => a.id === id);
+    if (!v) return;
+    this.player.setVariant(v);
+    this.player.showcase = 'flex';
+    this.flexT = 0.9;
+    this.hud.setName(v.name);
+    this.audio.play('roar');
+    try {
+      localStorage.setItem('ape', v.id);
+    } catch {
+      /* private mode */
+    }
+    this.screens.show('select', { apes: APES, current: v.id });
+  }
+
   start() {
+    this.player.showcase = null;
+    if (this.input.touch) {
+      // Phones: go full screen and sideways where the browser allows it.
+      try {
+        const el = document.documentElement;
+        const p = el.requestFullscreen && el.requestFullscreen();
+        if (p && p.then) p.then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {});
+      } catch {
+        /* not allowed here */
+      }
+    }
     this.audio.unlock();
     this.screens.hide();
     this.hud.show(true);
@@ -233,6 +299,7 @@ export class Game {
     this.enemies = [];
     for (const h of this.hazards) h.mesh.removeFromParent();
     this.hazards = [];
+    this.missiles = [];
     this.fx.clear();
     this.tokens = 2;
     this.timers = [];
@@ -273,9 +340,17 @@ export class Game {
     this.checkpoint = Math.min(this.objectives.length - 1, this.objIndex + 1);
     this.audio.play('objective');
     this.stats.score += 500;
+    this.player.heal(25);
     if (o.type === 'wave') {
       this.hud.toast('CLEARED', o.title);
       for (let k = 0; k < 2; k++) this.dropPretzel(o.at.x + rand(-14, 14), o.at.z + rand(-14, 14));
+      if (!this.seen.climb && !this.seen.climbTip) {
+        this.seen.climbTip = true;
+        this.after(3, () => {
+          this.hud.hint(this.input.touch ? 'Tip: lean on a building to climb it, then <b>SLAM</b> to dive off' : 'Tip: run into a building to climb it, then <b>K</b> to dive off');
+          this.after(8, () => this.hud.hint(''));
+        });
+      }
     } else if (o.type === 'gate') {
       this.hud.toast('OUT!', 'Cross the bridge to the Art Museum');
       this.hud.hint('');
@@ -370,12 +445,12 @@ export class Game {
 
   // ---- combat ------------------------------------------------------------
 
-  nearestEnemy(x, z, maxDist, aimYaw, cone) {
+  nearestEnemy(x, z, maxDist, aimYaw, cone, reach = 19) {
     let best = null;
     let bestScore = Infinity;
     const py = this.player.pos.y;
     for (const e of this.enemies) {
-      if (!e.hurtable || e.pos.y > py + 19) continue;
+      if (!e.hurtable || e.pos.y > py + reach || e.pos.y + e.height < py - 4) continue;
       const dx = e.pos.x - x;
       const dz = e.pos.z - z;
       const d = Math.hypot(dx, dz);
@@ -422,6 +497,20 @@ export class Game {
       else if (e.kind === 'eagle') this.fx.feathers(e.pos.x, hy, e.pos.z, 7, 0x5a3f2c);
       else this.fx.debris(e.pos.x, hy, e.pos.z, 3, 0x9a9da6, 14, 0.5, 1);
     }
+    const bell = this.world.places.liberty;
+    if (bell && this.time - (this.bellT || -9) > 0.8 && h.y < 12 && Math.hypot(h.x - bell.x, h.z - bell.z) < h.radius + 5) {
+      this.bellT = this.time;
+      this.audio.play('bell');
+      this.cam.shake(0.3);
+      this.fx.ring(bell.x, 9, bell.z, 3, 26, 0.7, 0xffd98a);
+      if (!this.seen.bell) {
+        this.seen.bell = true;
+        this.stats.score += 500;
+        this.hud.toast('LET FREEDOM RING', 'Secret found: +500', 2200);
+      } else {
+        this.stats.score += 10;
+      }
+    }
     const res = this.world.damageAt(h.x, h.z, Math.max(5, h.radius * 0.7), h.dmg * 1.4);
     for (const b of res.hit) this.fx.dust(clamp(h.x, b.x - b.w / 2, b.x + b.w / 2), 5, clamp(h.z, b.z - b.d / 2, b.z + b.d / 2), 3, 2.5);
     for (const b of res.destroyed) this.onBuildingDown(b);
@@ -433,6 +522,7 @@ export class Game {
       this.audio.play(h.heavy ? 'punchBig' : 'punch');
       this.freeze = Math.max(this.freeze, h.heavy ? 0.09 : 0.05);
       this.cam.shake(h.heavy ? 0.45 : 0.22);
+      this.buzz(h.heavy ? 30 : 12);
     } else if (res.hit.length || res.destroyed.length) {
       this.audio.play('crack');
       this.cam.shake(0.14);
@@ -528,7 +618,40 @@ export class Game {
     });
   }
 
+  // A short rumble on phones that support it.
+  buzz(ms) {
+    if (this.input.touch && navigator.vibrate) navigator.vibrate(ms);
+  }
+
+  onClimbStart() {
+    if (this.seen.climb) return;
+    this.seen.climb = true;
+    this.hud.hint(this.input.touch ? 'Climbing! Push toward the wall to go up. <b>JUMP</b> leaps off, <b>SLAM</b> dives.' : 'Climbing! Hold toward the wall to go up. <b>Space</b> leaps off, <b>K</b> dives.');
+    this.after(7, () => this.hud.hint(''));
+  }
+
+  onRoofReached(h) {
+    if (h >= 110 && !this.seen.tower) {
+      this.seen.tower = true;
+      this.stats.score += 1000;
+      this.audio.play('objective');
+      this.hud.toast('KING OF THE CITY', 'Top of a tower: +1,000', 2600);
+    } else if (h >= 8 && !this.seen.roof) {
+      this.seen.roof = true;
+      this.hud.toast('ROOFTOP!', 'Now dive off it', 1800);
+    }
+  }
+
+  onBigDive(drop) {
+    const pts = Math.round(drop * 4);
+    this.stats.score += pts;
+    this.slow = Math.max(this.slow, 0.25);
+    this.buzz(60);
+    this.hud.toast('MEGA DIVE', '+' + pts, 1400);
+  }
+
   onPlayerHurt(dmg) {
+    this.buzz(40);
     this.hud.hurtFlash();
     this.hud.float('-' + dmg, this.player.pos.x, this.player.pos.y + 16, this.player.pos.z, 'bad');
     this.audio.play('hurt');
@@ -553,7 +676,7 @@ export class Game {
     const T = 1.15;
     const g = 60;
     const y0 = from.pos.y + 8;
-    const ty = this.world.groundHeight(tx, tz);
+    const ty = this.standHeight(tx, tz);
     const mesh = new THREE.Mesh(this.trashGeo, this.trashMat);
     mesh.scale.set(1.5, 2.4, 1.5);
     mesh.castShadow = true;
@@ -567,8 +690,17 @@ export class Game {
     this.audio.play('swipe');
   }
 
+  // Where something aimed at (x, z) should land: the roof the ape is standing
+  // on if he is up on one, otherwise the street.
+  standHeight(x, z) {
+    const p = this.player;
+    const ground = this.world.groundHeight(x, z);
+    if ((p.onGround || p.state === 'climb') && p.pos.y > ground + 2 && Math.hypot(x - p.pos.x, z - p.pos.z) < 12) return p.pos.y;
+    return ground;
+  }
+
   featherStrike(from, tx, tz, delay) {
-    const ty = this.world.groundHeight(tx, tz);
+    const ty = this.standHeight(tx, tz);
     const mesh = new THREE.Mesh(this.featherGeo, this.featherMat);
     mesh.scale.set(1.3, 0.3, 8);
     const sx = from.pos.x;
@@ -665,6 +797,27 @@ export class Game {
     }
     if (this.input.take('mute')) this.audio.setMuted(!this.audio.muted);
 
+    if (this.state === 'select') {
+      const p = this.player;
+      p.time += rawDt;
+      if (this.flexT > 0 && (this.flexT -= rawDt) <= 0) p.showcase = 'idle';
+      p.animate(rawDt);
+      p.root.visible = true;
+      const fx = Math.sin(p.yaw);
+      const fz = Math.cos(p.yaw);
+      this.stage.camera.position.set(p.pos.x + fx * 44 - fz * 10, p.pos.y + 12, p.pos.z + fz * 44 + fx * 10);
+      this.stage.camera.lookAt(p.pos.x, p.pos.y + 8, p.pos.z);
+      if (this.stage.camera.fov !== 42) {
+        this.stage.camera.fov = 42;
+        this.stage.camera.updateProjectionMatrix();
+      }
+      this.time += rawDt;
+      this.world.update(rawDt);
+      this.fx.update(rawDt);
+      this.stage.setFocus(p.pos.x, p.pos.y, p.pos.z);
+      this.input.flush();
+      return;
+    }
     if (this.state === 'title' || this.state === 'win') {
       this.cam.orbit(rawDt, -40, 40, -10, 290, 120, 0.06);
       this.time += rawDt;
@@ -727,6 +880,23 @@ export class Game {
 
     this.updateHazards(dt);
     this.updatePickups(dt);
+    // Kicked cars arriving at the animal they were aimed at.
+    for (let i = this.missiles.length - 1; i >= 0; i--) {
+      const m = this.missiles[i];
+      m.t += dt;
+      if (m.t < m.T) continue;
+      this.missiles.splice(i, 1);
+      const e = m.tgt;
+      if (e.hurtable && Math.hypot(e.pos.x - m.x, e.pos.z - m.z) < e.radius + 7 && e.takeHit({ dmg: 14, dx: m.dx, dz: m.dz, knock: 22, launch: 12, heavy: false })) {
+        const hy = e.pos.y + e.height * 0.6;
+        this.fx.spark(e.pos.x, hy, e.pos.z, 6);
+        this.hud.float('14', e.pos.x, hy + 3, e.pos.z);
+        this.audio.play('punch');
+        this.combo++;
+        this.comboTimer = 2.4;
+        this.player.addRage(6);
+      }
+    }
     this.updateMission(dt);
 
     if (this.comboTimer > 0) {
@@ -748,11 +918,40 @@ export class Game {
     this.input.flush();
   }
 
+  // Keeps the frame rate up on slower phones by drawing fewer pixels, and
+  // gives them back when there is headroom.
+  govern(raw) {
+    const f = this.fps;
+    if (raw > 0.5 || document.hidden) return;
+    f.t += raw;
+    f.n++;
+    if (f.t < 1.5) return;
+    const rate = f.n / f.t;
+    f.t = 0;
+    f.n = 0;
+    const st = this.stage;
+    if (!st.setScale) return;
+    if (rate < 40 && st.scale > 0.5) {
+      st.setScale(st.scale - (rate < 26 ? 0.15 : 0.08));
+      f.good = 0;
+    } else if (rate > 56 && st.scale < 1) {
+      if (++f.good >= 4) {
+        st.setScale(st.scale + 0.06);
+        f.good = 0;
+      }
+    } else {
+      f.good = 0;
+    }
+  }
+
   run() {
     let last = performance.now();
     const frame = (now) => {
-      const dt = Math.min(0.05, (now - last) / 1000);
+      const raw = (now - last) / 1000;
+      const dt = Math.min(0.05, raw);
       last = now;
+      // Resolution changes clear the canvas, so they happen before drawing.
+      if (this.governed) this.govern(raw);
       this.update(dt);
       this.stage.render(dt);
       this.frames = (this.frames || 0) + 1;

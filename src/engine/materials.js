@@ -1,5 +1,10 @@
 import * as THREE from 'three';
 
+// Set by the renderer before a city is built. On phones every surface uses a
+// cut-down shader on a plain diffuse material: same shapes, a fraction of the
+// per-pixel work.
+export const detail = { low: false };
+
 // Values every custom material reads; render.js keeps them up to date.
 export const sharedUniforms = {
   uTime: { value: 0 },
@@ -19,6 +24,11 @@ const NOISE = /* glsl */ `
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.xx + p3.yz) * p3.zy);
   }
+  float h31(vec3 p) {
+    p = fract(p * 0.1031);
+    p += dot(p, p.zyx + 31.32);
+    return fract((p.x + p.y) * p.z);
+  }
   float vnoise(vec2 p) {
     vec2 i = floor(p);
     vec2 f = fract(p);
@@ -36,6 +46,16 @@ const NOISE = /* glsl */ `
   // 1 for detail of the given size while it is bigger than a pixel, fading to 0 as it shrinks below one.
   float keep(float footprint) {
     return 1.0 - smoothstep(0.3, 0.75, footprint);
+  }
+`;
+
+// What a window or a river mirrors on phones: a three-stop gradient standing
+// in for the sky and the street below it. up is the reflected ray's height.
+const CHEAP_SKY = /* glsl */ `
+  vec3 cheapSky(float up) {
+    vec3 horizon = vec3(0.56, 0.6, 0.63);
+    vec3 c = mix(horizon, vec3(0.2, 0.34, 0.6), clamp(up * 1.5, 0.0, 1.0));
+    return mix(vec3(0.11, 0.115, 0.12), c, smoothstep(-0.45, 0.04, up));
   }
 `;
 
@@ -176,8 +196,8 @@ const FACADE_FRAGMENT = /* glsl */ `
       #if STYLE == 0
         // Brick in running bond, unless the house has been painted or stuccoed.
         float painted = smoothstep(0.34, 0.42, lum);
-        base = mix(base, mix(vec3(lum), base, 0.78) * 0.86, 1.0 - painted);
-        vec2 bc = vec2(u / 0.56, y / 0.19);
+        base = mix(base, mix(vec3(lum), base, 0.6) * 0.8, 1.0 - painted);
+        vec2 bc = vec2(u / 0.4, y / 0.135);
         bc.x += 0.5 * mod(floor(bc.y), 2.0);
         vec2 bf = fract(bc);
         float bk = keep(max(fwidth(bc.x), fwidth(bc.y)) * 1.4) * (1.0 - painted);
@@ -460,8 +480,254 @@ const FACADE_FRAGMENT = /* glsl */ `
   }
 `;
 
+// The phone version of the facade. Same bays, floors, frames, sills, doors,
+// shopfronts and parapets, so the city keeps its look; but no rooms behind
+// the glass, no weathering noise, and the glass is a flat tint that picks up
+// a sky gradient at glancing angles instead of sampling the environment.
+const FACADE_VERTEX_PARS_LOW = /* glsl */ `
+  varying vec3 vBLocal;
+  varying vec3 vBView;
+  flat varying vec3 vBNormal;
+  flat varying vec3 vBSize;
+  flat varying float vBSeed;
+  flat varying float vBBase;
+`;
+
+const FACADE_VERTEX_LOW = /* glsl */ `
+  #ifdef USE_INSTANCING
+    mat4 bM = instanceMatrix;
+  #else
+    mat4 bM = mat4(1.0);
+  #endif
+  vec3 bScale = vec3(length(bM[0].xyz), length(bM[1].xyz), length(bM[2].xyz));
+  vBLocal = position * bScale;
+  vBNormal = normal;
+  vBSize = bScale;
+  vec3 bh = fract(vec3(bM[3].xzx) * 0.1031 + bScale.xzy * 0.071);
+  bh += dot(bh, bh.yzx + 33.33);
+  vBSeed = fract((bh.x + bh.y) * bh.z);
+  vec3 bCam = (inverse(modelMatrix * bM) * vec4(cameraPosition, 1.0)).xyz;
+  vBView = (position - bCam) * bScale;
+  vBBase = bM[3].y;
+`;
+
+const FACADE_FRAGMENT_PARS_LOW = /* glsl */ `
+  varying vec3 vBLocal;
+  varying vec3 vBView;
+  flat varying vec3 vBNormal;
+  flat varying vec3 vBSize;
+  flat varying float vBSeed;
+  flat varying float vBBase;
+  uniform vec2 uBay;
+  uniform vec4 uWin;
+  uniform float uGround;
+  uniform float uParapet;
+  uniform float uEdge;
+  uniform vec3 uGlassTint;
+  ${NOISE}
+  ${CHEAP_SKY}
+`;
+
+const FACADE_FRAGMENT_LOW = /* glsl */ `
+  #include <color_fragment>
+  vec3 bEmit = vec3(0.0);
+  {
+    vec3 an = abs(vBNormal);
+    vec3 base = diffuseColor.rgb;
+    float seed = vBSeed;
+    float H = vBSize.y;
+    float y = vBLocal.y;
+    #if STYLE == 4
+      diffuseColor.rgb = base * mix(0.74, 1.0, smoothstep(0.0, 1.2, y)) * (an.y > 0.5 ? 0.82 : 1.0);
+    #else
+    if (an.y < 0.5) {
+      bool xFace = an.x > 0.5;
+      float width = xFace ? vBSize.z : vBSize.x;
+      float u = xFace ? vBLocal.z : vBLocal.x;
+      float faceId = xFace ? (vBNormal.x > 0.0 ? 1.0 : 2.0) : (vBNormal.z > 0.0 ? 3.0 : 4.0);
+      vec3 rd = normalize(vBView);
+      float rdin = max(0.0, -(xFace ? rd.x * sign(vBNormal.x) : rd.z * sign(vBNormal.z)));
+      float thin = step(H, uBay.y * 1.3);
+      float street = step(vBBase, 0.5);
+      float ground = uGround * street;
+      float bays = max(1.0, floor((width - 2.0 * uEdge) / uBay.x));
+      float bayW = (width - 2.0 * uEdge) / bays;
+      float ub = (u + width * 0.5 - uEdge) / bayW;
+      float floorsN = max(1.0, floor((H - ground - uParapet) / uBay.y));
+      float flH = (H - ground - uParapet) / floorsN;
+      float fy = (y - ground) / flH;
+      vec2 cell = vec2(floor(ub), floor(fy));
+      vec2 f = vec2(fract(ub), fract(fy));
+      vec2 fw = vec2(fwidth(ub), fwidth(fy));
+      float detail = keep(max(fw.x, fw.y));
+      float inGrid = step(0.0, ub) * step(ub, bays) * step(0.0, fy) * step(fy, floorsN) * (1.0 - thin);
+      float atGround = step(y, ground) * (1.0 - thin) * street;
+      float roomId = h21(cell + faceId * 17.0 + seed * 91.0);
+
+      vec3 wall = base;
+      #if STYLE == 0
+        float lum = dot(base, vec3(0.3, 0.55, 0.15));
+        float painted = smoothstep(0.34, 0.42, lum);
+        wall = mix(mix(vec3(lum), base, 0.62) * 0.8, base, painted);
+        float cy = y / 0.28;
+        wall *= 1.0 - 0.15 * (1.0 - smoothstep(0.08, 0.2, fract(cy))) * keep(fwidth(cy) * 1.4) * (1.0 - painted);
+      #elif STYLE == 1
+        wall *= 1.0 - 0.13 * (1.0 - smoothstep(uWin.z - 0.02, uWin.z, f.y)) * inGrid * detail;
+      #elif STYLE == 2
+        wall = mix(vec3(0.2, 0.22, 0.24), base * 0.5, 0.45);
+      #else
+        float sy = y / 1.3;
+        wall *= 1.0 - 0.2 * (1.0 - smoothstep(0.0, 0.06, fract(sy))) * keep(fwidth(sy) * 1.4);
+      #endif
+      wall *= mix(0.78, 1.0, smoothstep(0.0, 3.2, y));
+      vec3 col = wall;
+
+      vec2 w0 = uWin.xz;
+      vec2 w1 = uWin.yw;
+      float win = aaBox(f, w0, w1, fw) * inGrid;
+      #if STYLE == 0
+        float doorBay = floor(h21(vec2(seed * 53.0, faceId)) * bays);
+        float isDoor = step(abs(cell.x - doorBay), 0.5) * step(abs(cell.y), 0.5) * inGrid;
+        float door = aaBox(f, vec2(0.3, -0.25), vec2(0.7, 0.74), fw) * isDoor;
+        win *= 1.0 - isDoor;
+      #endif
+      #if STYLE == 0 || STYLE == 3
+        float trim = max(aaBox(f, vec2(w0.x - 0.05, w0.y - 0.075), vec2(w1.x + 0.05, w0.y), fw), aaBox(f, vec2(w0.x - 0.05, w1.y), vec2(w1.x + 0.05, w1.y + 0.085), fw)) * inGrid;
+        #if STYLE == 0
+          trim *= 1.0 - isDoor;
+        #endif
+        col = mix(col, mix(vec3(0.5, 0.48, 0.44), base * 1.4, 0.3), trim * detail);
+      #endif
+      #if STYLE == 2
+        vec2 px = vec2(0.07 / bayW, 0.07 / flH);
+      #else
+        vec2 px = vec2(0.14 / bayW, 0.14 / flH);
+      #endif
+      float pane = aaBox(f, w0 + px, w1 - px, fw);
+      #if STYLE == 1 || STYLE == 2
+        pane *= smoothstep(px.x * 0.5, px.x * 0.5 + fw.x, abs(f.x - 0.5));
+        vec3 frameCol = vec3(0.14, 0.145, 0.15);
+      #else
+        pane *= smoothstep(px.y * 0.4, px.y * 0.4 + fw.y, abs(f.y - mix(w0.y, w1.y, 0.52)));
+        vec3 frameCol = mix(vec3(0.7, 0.68, 0.64), vec3(0.1, 0.1, 0.11), step(0.72, h21(vec2(seed * 11.0, 2.0))));
+      #endif
+      col = mix(col, frameCol, win * (1.0 - pane) * detail);
+
+      // Glass: a dark room, a blind in some windows, a lamp on in a few, and
+      // the sky sliding over it at glancing angles.
+      vec3 tint = uGlassTint;
+      #if STYLE == 2
+        tint = mix(uGlassTint, base * 1.5, 0.55);
+      #endif
+      float fres = pow(1.0 - rdin, 3.0);
+      vec3 mirror = cheapSky(rd.y) * mix(vec3(1.0), tint * 1.6, 0.45);
+      float blind = step(0.55, roomId) * step(mix(w1.y, w0.y, 0.2 + 0.6 * fract(roomId * 7.3)), f.y);
+      #if STYLE == 2
+        blind *= 0.4;
+      #endif
+      vec3 room = mix(tint * 0.1, vec3(0.3, 0.29, 0.26), blind);
+      float lit = step(0.9, roomId) * (1.0 - blind);
+      vec3 seen = mix(room, mirror, 0.2 + 0.72 * fres) + lit * vec3(0.5, 0.4, 0.22);
+      float cover = (w1.x - w0.x) * (w1.y - w0.y) * 0.9 * inGrid;
+      float glass = mix(cover, pane * win, detail);
+      col = mix(col, tint * 0.06, glass);
+      bEmit = seen * glass;
+
+      #if STYLE == 1 || STYLE == 2
+      {
+        float gb = max(1.0, floor(width / 6.5));
+        float gu = (u / width + 0.5) * gb;
+        vec2 gf = vec2(fract(gu), y / max(ground, 0.01));
+        vec2 gfw = vec2(fwidth(gu), fwidth(y / max(ground, 0.01)));
+        float shopId = h21(vec2(floor(gu), seed * 71.0 + faceId));
+        #if STYLE == 2
+          float shopTop = 0.86;
+          vec3 gwall = vec3(0.17, 0.17, 0.18);
+        #else
+          float shopTop = 0.7;
+          vec3 gwall = wall * 0.82;
+        #endif
+        float shop = aaBox(gf, vec2(0.07, 0.07), vec2(0.93, shopTop), gfw) * atGround;
+        col = mix(col, gwall, atGround);
+        bEmit *= 1.0 - atGround;
+        vec3 shopLight = mix(vec3(0.9, 0.74, 0.5), vec3(0.62, 0.7, 0.78), step(0.6, shopId)) * (0.14 + 0.26 * shopId);
+        col = mix(col, vec3(0.03), shop);
+        bEmit = mix(bEmit, shopLight * mix(1.0, 0.45, gf.y) + mirror * 0.2, shop);
+        #if STYLE == 1
+          float band = aaBox(gf, vec2(0.05, 0.72), vec2(0.95, 0.9), gfw) * atGround;
+          vec3 awn = shopId < 0.25 ? vec3(0.32, 0.05, 0.05) : shopId < 0.5 ? vec3(0.04, 0.16, 0.1) : shopId < 0.75 ? vec3(0.05, 0.08, 0.2) : vec3(0.07, 0.07, 0.07);
+          col = mix(col, awn, band);
+          bEmit *= 1.0 - band;
+        #endif
+      }
+      #elif STYLE == 0
+        float dsel = h21(vec2(seed * 29.0, 4.0));
+        vec3 doorCol = dsel < 0.25 ? vec3(0.03, 0.09, 0.05) : dsel < 0.5 ? vec3(0.22, 0.03, 0.03) : dsel < 0.75 ? vec3(0.02, 0.04, 0.1) : vec3(0.03, 0.03, 0.03);
+        col = mix(col, mix(vec3(0.5, 0.48, 0.45), base, 0.35) * 0.85, atGround);
+        col = mix(col, doorCol, door * detail);
+        bEmit *= 1.0 - door;
+      #else
+        col = mix(col, base * 0.82, atGround);
+      #endif
+
+      float nearTop = H - y;
+      #if STYLE == 0
+        col = mix(col, mix(vec3(0.4, 0.39, 0.36), base * 0.6, step(0.5, h21(vec2(seed * 3.0, 9.0)))), step(nearTop, 0.85) * (1.0 - thin));
+      #elif STYLE == 2
+        col = mix(col, vec3(0.2, 0.21, 0.23), step(nearTop, 0.35) * (1.0 - thin));
+      #else
+        col = mix(col, base * 1.12, step(nearTop, 0.5) * (1.0 - thin));
+      #endif
+      if (thin > 0.5) {
+        #if STYLE == 2
+          col = mix(vec3(0.2, 0.21, 0.23), base * 0.6, 0.4);
+        #else
+          col = wall * 1.08;
+        #endif
+        bEmit = vec3(0.0);
+      }
+      diffuseColor.rgb = col;
+    } else {
+      vec2 rp = vBLocal.xz;
+      float edge = min(vBSize.x * 0.5 - abs(rp.x), vBSize.z * 0.5 - abs(rp.y));
+      float small = step(min(vBSize.x, vBSize.z), 3.0);
+      float coping = (1.0 - smoothstep(0.45, 0.6, edge)) * (1.0 - small);
+      vec3 field = mix(vec3(0.13, 0.13, 0.14), vec3(0.3, 0.29, 0.27), step(0.45, h21(vec2(seed * 17.0, 1.0))) * 0.8);
+      #if STYLE == 2
+        field = vec3(0.34, 0.35, 0.36);
+      #endif
+      field *= mix(0.7, 1.0, clamp(smoothstep(0.6, 2.4, edge) + small, 0.0, 1.0));
+      diffuseColor.rgb = mix(field, mix(base * 0.85, vec3(0.5, 0.49, 0.46), 0.45), coping);
+    }
+    #endif
+  }
+`;
+
+function buildingMaterialLow(style, s, opts) {
+  const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, ...opts });
+  mat.defines = { STYLE: s.id };
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uBay = { value: new THREE.Vector2(s.bay[0], s.bay[1]) };
+    shader.uniforms.uWin = { value: new THREE.Vector4(s.win[0], s.win[1], s.win[2], s.win[3]) };
+    shader.uniforms.uGround = { value: s.ground };
+    shader.uniforms.uParapet = { value: s.parapet };
+    shader.uniforms.uEdge = { value: s.edge };
+    shader.uniforms.uGlassTint = { value: new THREE.Color(s.glass) };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>\n${FACADE_VERTEX_PARS_LOW}`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>\n${FACADE_VERTEX_LOW}`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\n${FACADE_FRAGMENT_PARS_LOW}`)
+      .replace('#include <color_fragment>', FACADE_FRAGMENT_LOW)
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += bEmit;');
+  };
+  mat.customProgramCacheKey = () => 'facade-low-' + style;
+  return mat;
+}
+
 export function buildingMaterial(style = 'brick', opts = {}) {
   const s = STYLES[style] || STYLES.brick;
+  if (detail.low) return buildingMaterialLow(style, s, opts);
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0, ...opts });
   mat.defines = { ...(mat.defines || {}), STYLE: s.id };
   mat.onBeforeCompile = (shader) => {
@@ -528,6 +794,10 @@ const GROUND_FRAGMENT = /* glsl */ `
       float crack = 1.0 - smoothstep(0.0, 0.02, abs(vnoise(p * 0.33 + 9.0) - 0.5));
       col *= 1.0 - 0.4 * crack * keep(fwp * 2.0);
       gRough = mix(0.88, 0.74, wear);
+      // Where the road dips it stays damp: darker, and smooth enough to mirror the sky.
+      float damp = smoothstep(0.7, 0.78, fbm(p * 0.035 + 71.0)) * smoothstep(0.35, 0.6, vnoise(p * 0.3 + 5.0));
+      col *= 1.0 - 0.35 * damp;
+      gRough = mix(gRough, 0.12, damp);
       // Street grid: gutters, tyre tracks and zebra crossings.
       vec2 s = (fract(p / uGrid.x + 0.5) - 0.5) * uGrid.x;
       vec2 as = abs(s);
@@ -581,8 +851,9 @@ const GROUND_FRAGMENT = /* glsl */ `
       // ---- grass ------------------------------------------------------------
       float gN = fbm(p * 0.07 + 5.0);
       float fine = vnoise(p * 2.7) * 0.6 + vnoise(p * 6.1) * 0.4;
-      vec3 grass = mix(base * 0.62, base * 1.12, gN);
-      grass = mix(grass, vec3(0.3, 0.3, 0.1), 0.3 * smoothstep(0.5, 0.8, fbm(p * 0.03 + 21.0)));
+      vec3 grass = mix(base * 0.6, base * 1.08, gN);
+      grass = mix(grass, vec3(0.3, 0.27, 0.11), 0.42 * smoothstep(0.42, 0.75, fbm(p * 0.03 + 21.0)));
+      grass *= 1.0 + 0.07 * (step(0.5, fract(p.x / 7.0)) - 0.5) * keep(fwp * 0.4);
       grass *= mix(1.0, 0.72 + 0.56 * fine, keep(fwp * 3.5));
       // Drifts of fallen leaves: soft warm patches, it is autumn.
       float drift = smoothstep(0.55, 0.8, fbm(p * 0.11 + 70.0)) * (0.5 + 0.5 * vnoise(p * 1.3 + 9.0));
@@ -596,13 +867,53 @@ const GROUND_FRAGMENT = /* glsl */ `
   }
 `;
 
+const GROUND_FRAGMENT_LOW = /* glsl */ `
+  #include <color_fragment>
+  {
+    vec2 p = vWPos.xz;
+    vec3 base = diffuseColor.rgb;
+    float fwp = max(fwidth(p.x), fwidth(p.y));
+    float top = step(0.5, abs(vONormal.y));
+    vec3 col = base;
+    #if GROUND_KIND == 0
+      col = base * (0.9 + 0.18 * vnoise(p * 0.05 + 3.0));
+      vec2 s = (fract(p / uGrid.x + 0.5) - 0.5) * uGrid.x;
+      vec2 as = abs(s);
+      float inside = step(uGridExt.x, p.x) * step(p.x, uGridExt.y) * step(uGridExt.z, p.y) * step(p.y, uGridExt.w) * uGrid.z;
+      float hs = uGrid.y;
+      float zebraNS = step(as.x, hs - 0.9) * step(hs + 1.6, as.y) * step(as.y, hs + 5.2) * step(fract(s.x / 1.7), 0.52);
+      float zebraEW = step(as.y, hs - 0.9) * step(hs + 1.6, as.x) * step(as.x, hs + 5.2) * step(fract(s.y / 1.7), 0.52);
+      float stopNS = step(as.x, hs - 0.9) * step(hs + 6.6, as.y) * step(as.y, hs + 7.2) * step(0.0, s.x * s.y);
+      float stopEW = step(as.y, hs - 0.9) * step(hs + 6.6, as.x) * step(as.x, hs + 7.2) * step(s.x * s.y, 0.0);
+      float paint = max(max(zebraNS, zebraEW), max(stopNS, stopEW)) * inside;
+      col = mix(col, vec3(0.6, 0.59, 0.56), paint * mix(0.45, 0.85, keep(fwp * 1.4)));
+    #else
+      float isGrass = step(base.r * 1.12, base.g);
+      float lum = dot(base, vec3(0.3, 0.55, 0.15));
+      float isPlaza = (1.0 - isGrass) * step(0.44, lum);
+      vec2 q = isPlaza > 0.5 ? p / vec2(2.4, 1.2) : p / 1.6;
+      q.x += isPlaza * 0.5 * mod(floor(q.y), 2.0);
+      vec2 qf = fract(q);
+      float qk = keep(max(fwidth(q.x), fwidth(q.y)) * 1.6);
+      float jw = isPlaza > 0.5 ? 0.02 : 0.035;
+      float joint = max(1.0 - smoothstep(jw, jw * 2.2, qf.x), 1.0 - smoothstep(jw, jw * 2.2, qf.y));
+      vec3 pave = base * (0.9 + 0.14 * h21(floor(q) + 11.0) * qk) * (1.0 - 0.28 * joint * qk);
+      vec3 grass = base * (0.78 + 0.44 * vnoise(p * 0.07 + 5.0));
+      col = mix(pave, grass, isGrass);
+      col = mix(base * 0.62, col, top);
+    #endif
+    diffuseColor.rgb = col;
+  }
+`;
+
 // kind 0: the asphalt sheet under everything. kind 1: slabs laid on top
 // (pavement, plazas, lawns), told apart by their instance colour.
 // grid: { pitch, half, x0, x1, z0, z1 } describes the street grid so the
 // asphalt can paint crossings at the junctions.
 export function groundMaterial(kind = 0, color = 0xffffff, grid = null) {
-  const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.9, metalness: 0 });
-  mat.defines = { GROUND_KIND: kind };
+  const low = detail.low;
+  const mat = low ? new THREE.MeshLambertMaterial({ color }) : new THREE.MeshStandardMaterial({ color, roughness: 0.9, metalness: 0 });
+  mat.defines = { ...(mat.defines || {}), GROUND_KIND: kind };
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uGrid = { value: new THREE.Vector3(grid ? grid.pitch : 78, grid ? grid.half : 9, grid ? 1 : 0) };
     shader.uniforms.uGridExt = { value: new THREE.Vector4(grid ? grid.x0 : 0, grid ? grid.x1 : 0, grid ? grid.z0 : 0, grid ? grid.z1 : 0) };
@@ -611,10 +922,10 @@ export function groundMaterial(kind = 0, color = 0xffffff, grid = null) {
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n${WORLD_VERTEX}`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${WORLD_VERTEX_PARS}\nuniform vec3 uGrid;\nuniform vec4 uGridExt;\n${NOISE}`)
-      .replace('#include <color_fragment>', GROUND_FRAGMENT)
-      .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nroughnessFactor = gRough;\nmetalnessFactor = gMetal;');
+      .replace('#include <color_fragment>', low ? GROUND_FRAGMENT_LOW : GROUND_FRAGMENT);
+    if (!low) shader.fragmentShader = shader.fragmentShader.replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nroughnessFactor = gRough;\nmetalnessFactor = gMetal;');
   };
-  mat.customProgramCacheKey = () => 'ground-' + kind + (grid ? '-grid' : '');
+  mat.customProgramCacheKey = () => 'ground-' + kind + (grid ? '-grid' : '') + (low ? '-low' : '');
   return mat;
 }
 
@@ -624,57 +935,101 @@ export function groundMaterial(kind = 0, color = 0xffffff, grid = null) {
 // Gives them the grain of real material: mottling, masonry joints on pale
 // stone, grit on anything dark and flat, and grime where walls meet ground.
 export function decorMaterial() {
-  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.82, metalness: 0 });
+  const low = detail.low;
+  const mat = low
+    ? new THREE.MeshLambertMaterial({ vertexColors: true })
+    : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0 });
   mat.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${WORLD_VERTEX_PARS}`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n${WORLD_VERTEX}`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${WORLD_VERTEX_PARS}\n${NOISE}`)
-      .replace(
-        '#include <color_fragment>',
-        /* glsl */ `#include <color_fragment>
-        float dRough = 0.82;
-        float dMetal = 0.0;
-        {
-          vec3 base = diffuseColor.rgb;
-          vec3 wn = normalize(cross(dFdx(vWPos), dFdy(vWPos)));
-          float up = abs(wn.y);
-          float lum = dot(base, vec3(0.3, 0.55, 0.15));
-          float sat = max(base.r, max(base.g, base.b)) - min(base.r, min(base.g, base.b));
-          float side = abs(wn.x) > abs(wn.z) ? vWPos.z : vWPos.x;
-          vec2 wp = up > 0.6 ? vWPos.xz : vec2(side, vWPos.y);
-          float fwp = max(fwidth(wp.x), fwidth(wp.y));
-          vec3 col = base * (0.84 + 0.3 * fbm(wp * 0.13 + 9.0));
-          col *= mix(1.0, 0.82 + 0.36 * vnoise(wp * 5.0), keep(fwp * 6.0));
-          // Pale, grey-ish surfaces are stone: give them courses.
-          float stone = smoothstep(0.22, 0.34, lum) * (1.0 - smoothstep(0.16, 0.3, sat));
-          vec2 sc = up > 0.6 ? wp / vec2(2.2, 2.2) : wp / vec2(2.4, 1.2);
-          sc.x += 0.5 * mod(floor(sc.y), 2.0) * (1.0 - step(0.6, up));
-          float sk = keep(max(fwidth(sc.x), fwidth(sc.y)) * 1.6);
-          float joint = max(1.0 - smoothstep(0.0, 0.03, fract(sc.x)), 1.0 - smoothstep(0.0, 0.05, fract(sc.y)));
-          col *= 1.0 - 0.24 * joint * sk * stone;
-          col *= 1.0 + 0.1 * (h21(floor(sc)) - 0.5) * sk * stone;
-          // Rain streaks down walls, dirt at the foot.
-          float streak = vnoise(vec2(side * 0.9, vWPos.y * 0.07));
-          col *= 1.0 - 0.18 * smoothstep(0.45, 0.85, streak) * (1.0 - up) * stone;
-          col *= mix(0.72, 1.0, clamp(smoothstep(0.2, 2.8, vWPos.y) + up, 0.0, 1.0));
-          // Painted steel and bronze catch the light.
-          float metalish = smoothstep(0.3, 0.5, sat) * (1.0 - step(0.6, up)) * step(base.g, base.b * 1.05 + 0.02) * step(base.r, base.b);
-          dMetal = 0.45 * metalish;
-          dRough = mix(0.84, 0.5, metalish);
-          // Water in fountains and ponds: pale blue, flat, shiny.
-          float water = step(0.6, up) * step(base.r * 1.6, base.b) * step(0.25, base.b);
-          dRough = mix(dRough, 0.08, water);
-          col = mix(col, base * 0.55, water);
-          diffuseColor.rgb = col;
-        }`
-      )
-      .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nroughnessFactor = dRough;\nmetalnessFactor = dMetal;');
+      .replace('#include <color_fragment>', low ? DECOR_FRAGMENT_LOW : DECOR_FRAGMENT);
+    if (!low) shader.fragmentShader = shader.fragmentShader.replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nroughnessFactor = dRough;\nmetalnessFactor = dMetal;');
   };
-  mat.customProgramCacheKey = () => 'decor';
+  mat.customProgramCacheKey = () => 'decor' + (low ? '-low' : '');
   return mat;
 }
+
+// What kind of thing a baked colour is, judged from the colour alone: lawn,
+// pale stone, red brick, painted or patinated metal, or water in a basin.
+const DECOR_CLASSIFY = /* glsl */ `
+  vec3 base = diffuseColor.rgb;
+  vec3 wn = normalize(cross(dFdx(vWPos), dFdy(vWPos)));
+  float up = abs(wn.y);
+  float lum = dot(base, vec3(0.3, 0.55, 0.15));
+  float sat = max(base.r, max(base.g, base.b)) - min(base.r, min(base.g, base.b));
+  float side = abs(wn.x) > abs(wn.z) ? vWPos.z : vWPos.x;
+  vec2 wp = up > 0.6 ? vWPos.xz : vec2(side, vWPos.y);
+  float fwp = max(fwidth(wp.x), fwidth(wp.y));
+  float isGrass = step(base.r * 1.12, base.g) * step(base.b * 1.25, base.g) * step(0.6, up);
+  float stone = smoothstep(0.22, 0.34, lum) * (1.0 - smoothstep(0.16, 0.3, sat));
+  float brick = step(base.g * 1.7, base.r) * step(base.b * 1.3, base.r) * step(0.05, base.r) * (1.0 - step(0.6, up));
+  float water = step(0.6, up) * step(base.r * 1.6, base.b) * step(0.08, base.b);
+`;
+
+const DECOR_FRAGMENT = /* glsl */ `
+  #include <color_fragment>
+  float dRough = 0.82;
+  float dMetal = 0.0;
+  {
+    ${DECOR_CLASSIFY}
+    vec3 col = base * (0.84 + 0.3 * fbm(wp * 0.13 + 9.0));
+    col *= mix(1.0, 0.82 + 0.36 * vnoise(wp * 5.0), keep(fwp * 6.0));
+    // Stone: laid in courses, with the odd darker block.
+    vec2 sc = up > 0.6 ? wp / vec2(2.2, 2.2) : wp / vec2(2.4, 1.2);
+    sc.x += 0.5 * mod(floor(sc.y), 2.0) * (1.0 - step(0.6, up));
+    float sk = keep(max(fwidth(sc.x), fwidth(sc.y)) * 1.6);
+    float joint = max(1.0 - smoothstep(0.0, 0.03, fract(sc.x)), 1.0 - smoothstep(0.0, 0.05, fract(sc.y)));
+    col *= 1.0 - 0.24 * joint * sk * stone;
+    col *= 1.0 + 0.1 * (h21(floor(sc)) - 0.5) * sk * stone;
+    // Brick: small courses in running bond.
+    vec2 bc = vec2(wp.x / 0.4, wp.y / 0.135);
+    bc.x += 0.5 * mod(floor(bc.y), 2.0);
+    float bk = keep(max(fwidth(bc.x), fwidth(bc.y)) * 1.4) * brick;
+    float mortar = max(1.0 - smoothstep(0.05, 0.11, fract(bc.x)), 1.0 - smoothstep(0.1, 0.2, fract(bc.y)));
+    col = mix(col, mix(vec3(lum), col, 0.62) * 0.84, brick);
+    col *= 1.0 + bk * (0.3 * (h21(floor(bc)) - 0.5) - 0.3 * mortar);
+    // Rain streaks down walls, dirt at the foot.
+    float streak = vnoise(vec2(side * 0.9, vWPos.y * 0.07));
+    col *= 1.0 - 0.18 * smoothstep(0.45, 0.85, streak) * (1.0 - up) * max(stone, brick);
+    col *= mix(0.72, 1.0, clamp(smoothstep(0.2, 2.8, vWPos.y) + up, 0.0, 1.0));
+    // Painted steel and bronze catch the light.
+    float metalish = smoothstep(0.3, 0.5, sat) * (1.0 - step(0.6, up)) * step(base.g, base.b * 1.05 + 0.02) * step(base.r, base.b);
+    dMetal = 0.45 * metalish;
+    dRough = mix(0.84, 0.5, metalish);
+    // Lawns: the same dry, uneven turf as the parks.
+    vec3 turf = mix(base * 0.6, base * 1.08, fbm(vWPos.xz * 0.07 + 5.0));
+    turf = mix(turf, vec3(0.3, 0.27, 0.11), 0.42 * smoothstep(0.42, 0.75, fbm(vWPos.xz * 0.03 + 21.0)));
+    turf *= mix(1.0, 0.72 + 0.56 * (vnoise(vWPos.xz * 2.7) * 0.6 + vnoise(vWPos.xz * 6.1) * 0.4), keep(fwp * 3.5));
+    col = mix(col, turf, isGrass);
+    dRough = mix(dRough, 1.0, isGrass);
+    // Water in fountains and ponds: dark, flat, shiny.
+    dRough = mix(dRough, 0.06, water);
+    col = mix(col, base * 0.3, water);
+    diffuseColor.rgb = col;
+  }
+`;
+
+const DECOR_FRAGMENT_LOW = /* glsl */ `
+  #include <color_fragment>
+  {
+    ${DECOR_CLASSIFY}
+    vec3 col = base;
+    vec2 sc = up > 0.6 ? wp / vec2(2.2, 2.2) : wp / vec2(2.4, 1.2);
+    float sk = keep(max(fwidth(sc.x), fwidth(sc.y)) * 1.6);
+    float joint = max(1.0 - smoothstep(0.0, 0.03, fract(sc.x)), 1.0 - smoothstep(0.0, 0.05, fract(sc.y)));
+    col *= 1.0 - 0.22 * joint * sk * stone;
+    col = mix(col, mix(vec3(lum), col, 0.62) * 0.84, brick);
+    float cy = wp.y / 0.28;
+    col *= 1.0 - 0.15 * (1.0 - smoothstep(0.08, 0.2, fract(cy))) * keep(fwidth(cy) * 1.4) * brick;
+    col *= mix(0.74, 1.0, clamp(smoothstep(0.2, 2.8, vWPos.y) + up, 0.0, 1.0));
+    col = mix(col, base * (0.78 + 0.44 * vnoise(vWPos.xz * 0.07 + 5.0)), isGrass);
+    col = mix(col, base * 0.45, water);
+    diffuseColor.rgb = col;
+  }
+`;
 
 // ---------------------------------------------------------------------------
 // Water
@@ -683,6 +1038,7 @@ export function decorMaterial() {
 // the shader; the sky reflection comes from the environment map, so there is
 // no second render of the scene.
 export function waterMaterial(color = 0x1c4a5c) {
+  if (detail.low) return waterMaterialLow(color);
   const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.06, metalness: 0, transparent: true, opacity: 0.94 });
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = sharedUniforms.uTime;
@@ -726,13 +1082,46 @@ export function waterMaterial(color = 0x1c4a5c) {
   return mat;
 }
 
+// The phone river: no ripple normals and no environment lookup, just a sky
+// gradient that strengthens toward the far bank and a slow swell.
+function waterMaterialLow(color) {
+  const mat = new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.94 });
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = sharedUniforms.uTime;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>\n${WORLD_VERTEX_PARS}`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>\n${WORLD_VERTEX}`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\n${WORLD_VERTEX_PARS}\nuniform float uTime;\n${CHEAP_SKY}`)
+      .replace(
+        '#include <color_fragment>',
+        /* glsl */ `#include <color_fragment>
+        vec3 wEmit = vec3(0.0);
+        {
+          vec2 p = vWPos.xz;
+          vec3 toEye = normalize(cameraPosition - vWPos);
+          float fres = pow(1.0 - clamp(toEye.y, 0.0, 1.0), 4.0);
+          float swell = sin(p.y * 0.7 + uTime * 1.2 + sin(p.x * 0.5 + uTime * 0.5) * 1.6) * 0.5 + 0.5;
+          diffuseColor.rgb *= 0.55 + 0.2 * swell;
+          wEmit = cheapSky(toEye.y) * (0.1 + 0.8 * fres) * (0.92 + 0.16 * swell);
+        }`
+      )
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += wEmit;');
+  };
+  mat.customProgramCacheKey = () => 'water-low';
+  return mat;
+}
+
 // ---------------------------------------------------------------------------
 // Trees
 // ---------------------------------------------------------------------------
 // The crown geometry carries baked shading in its vertex colours; the shader
 // adds leaf-scale mottling and the glow of sun coming through the canopy.
 export function foliageMaterial() {
-  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.9, metalness: 0 });
+  const low = detail.low;
+  const mat = low
+    ? new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true })
+    : new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.9, metalness: 0 });
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uSunDir = sharedUniforms.uSunDir;
     shader.vertexShader = shader.vertexShader
@@ -740,34 +1129,58 @@ export function foliageMaterial() {
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n${WORLD_VERTEX}\nvLeafPos = position;`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${WORLD_VERTEX_PARS}\nvarying vec3 vLeafPos;\nuniform vec3 uSunDir;\n${NOISE}`)
-      .replace(
-        '#include <color_fragment>',
-        /* glsl */ `#include <color_fragment>
-        vec3 leafGlow = vec3(0.0);
-        {
-          vec3 lp = vLeafPos * 17.0;
-          float fwl = max(fwidth(lp.x), max(fwidth(lp.y), fwidth(lp.z)));
-          float n = vnoise(lp.xz + lp.y * 1.9) * 0.5 + vnoise(lp.xy * 1.3 + lp.z * 2.3 + 4.0) * 0.5;
-          float n2 = vnoise(lp.yz * 2.3 + lp.x * 1.1 + 9.0);
-          float big = vnoise(vWPos.xz * 0.5 + vWPos.y * 0.35);
-          vec3 leaf = diffuseColor.rgb;
-          // Real foliage is darker and duller than a paint swatch.
-          leaf = mix(vec3(dot(leaf, vec3(0.3, 0.55, 0.15))), leaf, 0.82) * 0.5;
-          float lk = keep(fwl * 1.2);
-          leaf *= mix(1.0, 0.55 + 0.9 * n, lk) * (0.8 + 0.4 * big);
-          // Gaps in the canopy read as dark holes.
-          leaf *= 1.0 - 0.6 * smoothstep(0.58, 0.82, n2) * lk;
-          diffuseColor.rgb = leaf;
-          vec3 toEye = normalize(cameraPosition - vWPos);
-          float through = pow(clamp(dot(-toEye, uSunDir), 0.0, 1.0), 3.0);
-          leafGlow = diffuseColor.rgb * through * 0.9;
-        }`
-      )
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += leafGlow;');
+      .replace('#include <color_fragment>', low ? FOLIAGE_FRAGMENT_LOW : FOLIAGE_FRAGMENT);
+    if (!low) shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += leafGlow;');
   };
-  mat.customProgramCacheKey = () => 'foliage';
+  mat.customProgramCacheKey = () => 'foliage' + (low ? '-low' : '');
   return mat;
 }
+
+const FOLIAGE_FRAGMENT = /* glsl */ `
+  #include <color_fragment>
+  vec3 leafGlow = vec3(0.0);
+  {
+    // A crown is a few smooth lobes. Two things turn it into foliage: the
+    // surface is broken into leaf clusters at two sizes, each its own tone,
+    // and round the rim of every lobe clusters are dropped at random, so the
+    // outline is ragged and you see through to the lobe behind.
+    vec3 lp = vLeafPos * 8.0;
+    float fwl = max(fwidth(lp.x), max(fwidth(lp.y), fwidth(lp.z)));
+    float lk = keep(fwl * 2.2);
+    float cellA = h31(floor(lp));
+    float cellB = h31(floor(lp * 2.7) + 11.0);
+    float cellC = h31(floor(lp * 6.3) + 23.0);
+    float ndv = abs(dot(normalize(vNormal), normalize(vViewPosition)));
+    if (1.0 - ndv > mix(1.0, 0.46 + 0.3 * cellB + 0.2 * cellC, lk)) discard;
+    float big = vnoise(vWPos.xz * 0.45 + vWPos.y * 0.3);
+    vec3 leaf = diffuseColor.rgb;
+    // Real foliage is darker and duller than a paint swatch.
+    leaf = mix(vec3(dot(leaf, vec3(0.3, 0.55, 0.15))), leaf, 0.74) * 0.56;
+    leaf *= mix(1.0, (0.8 + 0.4 * cellA) * (0.76 + 0.48 * cellB) * (0.86 + 0.28 * cellC), lk) * (0.84 + 0.32 * big);
+    // A few clusters have already turned.
+    leaf = mix(leaf, leaf * vec3(1.4, 1.02, 0.5), step(0.9, cellB) * lk * 0.7);
+    // Deep between clusters it is dark.
+    leaf *= 1.0 - 0.55 * step(0.86, h31(floor(lp * 2.7) + 5.0)) * lk;
+    // The rim of each lobe is thin and lets light through.
+    leaf *= 1.0 + 0.3 * smoothstep(0.55, 0.15, ndv);
+    diffuseColor.rgb = leaf;
+    vec3 toEye = normalize(cameraPosition - vWPos);
+    float through = pow(clamp(dot(-toEye, uSunDir), 0.0, 1.0), 3.0);
+    leafGlow = diffuseColor.rgb * through * 0.9;
+  }
+`;
+
+const FOLIAGE_FRAGMENT_LOW = /* glsl */ `
+  #include <color_fragment>
+  {
+    vec3 leaf = diffuseColor.rgb;
+    leaf = mix(vec3(dot(leaf, vec3(0.3, 0.55, 0.15))), leaf, 0.76) * 0.64;
+    vec3 lp = vLeafPos * 8.0;
+    float lk = keep(max(fwidth(lp.x), max(fwidth(lp.y), fwidth(lp.z))) * 2.2);
+    leaf *= mix(1.0, 0.72 + 0.56 * h31(floor(lp * 2.7) + 11.0), lk);
+    diffuseColor.rgb = leaf;
+  }
+`;
 
 // Kept for anything that still wants a simple gradient dome.
 export function skyMaterial(top, horizon, bottom) {

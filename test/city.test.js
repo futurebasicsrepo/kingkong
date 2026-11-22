@@ -69,3 +69,29 @@ test('math helpers', () => {
   const b = mulberry32(7);
   assert.equal(a(), b());
 });
+
+test('roofs can be stood on, and setbacks are separate ledges', () => {
+  const city = makeCity();
+  city.addBuilding('brick', 0, 0, 20, 20, 30, { tiers: [{ w: 10, d: 10, h: 20 }] });
+  assert.equal(city.roofAt(0, 0, 5), 0, 'not from the street');
+  assert.equal(city.roofAt(8, 0, 31), 30, 'the body roof');
+  assert.equal(city.roofAt(0, 0, 31), 30, 'the tier is too high to step onto');
+  assert.equal(city.roofAt(0, 0, 51), 50, 'the top of the tier');
+  // On the ledge the tier wall still pushes back; from the street it does not.
+  const ledge = { x: 6, z: 0 };
+  city.resolveCircle(ledge, 2, 30);
+  assert.ok(ledge.x >= 7 - 1e-6, `ledge x was ${ledge.x}`);
+  const street = { x: 30, z: 0 };
+  city.resolveCircle(street, 2, 0);
+  assert.deepEqual(street, { x: 30, z: 0 });
+});
+
+test('knocking a building down removes every ledge', () => {
+  const city = makeCity();
+  const b = city.addBuilding('brick', 0, 0, 20, 20, 30, { hp: 10, tiers: [{ w: 10, d: 10, h: 20 }] });
+  city.finalize = () => {};
+  b.mesh = { setMatrixAt() {}, setColorAt() {}, instanceMatrix: {}, instanceColor: null };
+  const res = city.damageAt(12, 0, 5, 50);
+  assert.equal(res.destroyed.length, 1);
+  assert.equal(city.roofAt(0, 0, 100), 0);
+});

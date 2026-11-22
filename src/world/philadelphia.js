@@ -14,11 +14,11 @@ const PITCH = 78; // one block plus one street
 const HALF_STREET = 9;
 
 const COL = {
-  asphalt: 0x3a3e49,
+  asphalt: 0x4c4c4d,
   sidewalk: 0xa9a69e,
   plaza: 0xcfc8b8,
-  grass: 0x62a850,
-  grassDark: 0x4f9544,
+  grass: 0x768a4c,
+  grassDark: 0x687d45,
   water: 0x2f80ba,
   stone: 0xcfc7b6,
   slate: 0x47525e,
@@ -116,8 +116,8 @@ export function buildPhiladelphia(scene) {
   };
   plane(-3200, -500, 0, city.asphalt(COL.asphalt));
   plane(-430, 412, 0, land);
-  plane(640, 3200, 0, groundMaterial(1, 0x55664f));
-  const bed = new THREE.MeshStandardMaterial({ color: 0x14303c, roughness: 1 });
+  plane(640, 3200, 0, groundMaterial(1, 0x5c6a4a));
+  const bed = new THREE.MeshLambertMaterial({ color: 0x14303c });
   plane(-500, -430, -6, bed);
   plane(412, 640, -6, bed);
   const waterMat = waterMaterial(0x1d4c5c);
@@ -129,7 +129,7 @@ export function buildPhiladelphia(scene) {
   for (const x of [-500.6, -429.4, 412.6, 639.4]) d.box(1.2, 6.2, 3200, x, -6, 0, 0x8d8a83);
 
   // West bank, river trail, waterfront.
-  city.addSlab(-1600, -1600, -500, 1600, 0x8f9a84, 0.2);
+  city.addSlab(-1600, -1600, -500, 1600, 0x8d9084, 0.2);
   city.addSlab(-430, -1600, -399, 1600, COL.grass, 0.3);
   city.addSlab(399, -1600, 412, 1600, COL.sidewalk, 0.25);
   // Fairmount Park around the museum.
@@ -193,6 +193,32 @@ export function buildPhiladelphia(scene) {
     });
   };
 
+  // The things bolted onto a city building: a canopy over the door on the
+  // street side, a blade sign at a corner, a timber water tank or a
+  // billboard on the roof. ox and oz say which way the street is.
+  const AWNINGS = [0x7a1f1a, 0x1f4a36, 0x1e3a66, 0x2b2b2d, 0x8a6a1e];
+  const dress = (bld, ox, oz, brick) => {
+    const sx = Math.sign(ox);
+    const sz = Math.sign(oz);
+    const top = bld.top;
+    if (sz !== 0 && rng() < 0.7) city.addAttachment(bld, R(-0.2, 0.2) * bld.w, sz * (bld.d / 2 + 1.1), R(5, 9), 2.4, 0.3, 3.5, pickc(AWNINGS));
+    if (sx !== 0 && rng() < 0.55) city.addAttachment(bld, sx * (bld.w / 2 + 1.1), R(-0.2, 0.2) * bld.d, 2.4, R(5, 9), 0.3, 3.5, pickc(AWNINGS));
+    if (sz !== 0 && rng() < 0.3) city.addAttachment(bld, sx * (bld.w / 2 - 1.4) || bld.w / 2 - 1.4, sz * (bld.d / 2 + 0.9), 0.4, 1.7, R(5, 8), 5.5, pickc(AWNINGS));
+    if (brick && rng() < 0.4 && bld.tiers.length === 0) {
+      // A water tank on legs.
+      const tx = R(-0.25, 0.25) * bld.w;
+      const tzz = R(-0.25, 0.25) * bld.d;
+      city.addAttachment(bld, tx, tzz, 2.6, 2.6, 2.2, top, 0x3a3d40);
+      city.addAttachment(bld, tx, tzz, 3.4, 3.4, 3.6, top + 2.2, 0x6a4e37);
+      city.addAttachment(bld, tx, tzz, 3.8, 3.8, 0.4, top + 5.8, 0x4a4038);
+    } else if (!brick && rng() < 0.18 && bld.tiers.length === 0) {
+      // A billboard facing the street.
+      const fz = sz || 1;
+      city.addAttachment(bld, 0, fz * (bld.d / 2 - 1.2), 0.5, 0.5, 3, top, 0x2c2f33);
+      city.addAttachment(bld, 0, fz * (bld.d / 2 - 1.0), bld.w * 0.7, 0.4, 4.2, top + 3, pickc([0xe9e2d0, 0xc23a2a, 0x24588f, 0xe0b23a]));
+    }
+  };
+
   const parkTrees = (b, n, clearR = 14) => {
     for (let k = 0; k < n; k++) {
       const x = R(b.x0 + 4, b.x1 - 4);
@@ -203,7 +229,7 @@ export function buildPhiladelphia(scene) {
 
   const fountain = (x, z, r, jet) => {
     d.cyl(r, 1.3, x, 0.3, z, 0xbdb6a6, 16);
-    d.cyl(r - 1.2, 0.3, x, 1.4, z, 0x58a8d8, 16);
+    d.cyl(r - 1.2, 0.3, x, 1.4, z, 0x2f5f78, 16);
     d.cyl(r * 0.22, 3, x, 0.3, z, 0xa9a294, 8);
     d.cone(r * 0.12, jet, x, 3.3, z, 0xd8f0ff, 6);
     for (let k = 0; k < 5; k++) {
@@ -268,7 +294,24 @@ export function buildPhiladelphia(scene) {
           const z = b.cz + oz;
           if (nearParkway(x, z, 36)) continue;
           const brick = rng() < 0.35;
-          city.addBuilding(brick ? 'brick' : 'office', x, z, R(22, 27), R(22, 27), R(22, 58), { color: brick ? pickc(BRICK) : pickc(OFFICE) });
+          const w = R(22, 27);
+          const dd = R(22, 27);
+          const h = R(22, 58);
+          const color = brick ? pickc(BRICK) : pickc(OFFICE);
+          const shape = rng();
+          let bld;
+          if (shape < 0.28 && h > 34) {
+            // A shaft rising from a wider podium.
+            const ph = R(9, 14);
+            bld = city.addBuilding(brick ? 'brick' : 'office', x, z, w, dd, ph, { color, hp: (w * dd * h) / 420, tiers: [{ w: w - R(5, 8), d: dd - R(5, 8), h: h - ph }] });
+          } else if (shape < 0.55 && h > 30) {
+            // A setback crown.
+            const th = R(5, 9);
+            bld = city.addBuilding(brick ? 'brick' : 'office', x, z, w, dd, h - th, { color, hp: (w * dd * h) / 420, tiers: [{ w: w * R(0.62, 0.8), d: dd * R(0.62, 0.8), h: th }] });
+          } else {
+            bld = city.addBuilding(brick ? 'brick' : 'office', x, z, w, dd, h, { color });
+          }
+          dress(bld, ox, oz, brick);
         }
         continue;
       }
@@ -278,7 +321,8 @@ export function buildPhiladelphia(scene) {
           for (let c = 0; c < 2; c++) {
             const x = b.x0 + 10 + a * 20;
             const z = b.z0 + 15 + c * 30;
-            city.addBuilding('brick', x, z, R(16, 19), R(22, 27), R(12, 22), { color: pickc(BRICK) });
+            const bld = city.addBuilding('brick', x, z, R(16, 19), R(22, 27), R(12, 22), { color: pickc(BRICK) });
+            dress(bld, 0, c === 0 ? -1 : 1, true);
           }
         }
         continue;
@@ -352,43 +396,151 @@ export function buildPhiladelphia(scene) {
     }
   }
 
+  // The small things a pavement carries: a hydrant and a litter bin near
+  // each corner, bus shelters downtown, benches round the squares.
+  for (let i = -5; i <= 4; i++) {
+    for (let j = -5; j <= 4; j++) {
+      const zone = zoneOf(i, j);
+      if (zone === 'plaza' || zone === 'fairmount') continue;
+      const b = block(i, j);
+      if (nearParkway(b.cx, b.cz, 46)) continue;
+      city.addProp('hydrant', b.x0 + 1.0, b.z0 + R(5, 9), 0);
+      city.addProp('bin', b.x1 - 1.2, b.z1 - R(4, 8), 0);
+      if (rng() < 0.5) city.addProp('hydrant', b.x1 - R(6, 12), b.z1 - 1.0, 0);
+      if ((zone === 'office' || zone === 'tower' || zone === 'oldcity') && rng() < 0.6) {
+        if (rng() < 0.5) city.addProp('shelter', b.cx + R(-12, 12), b.z0 + 1.6, Math.PI);
+        else city.addProp('shelter', b.x1 - 1.6, b.cz + R(-12, 12), Math.PI / 2);
+      }
+      if (zone === 'park' || zone === 'jfk' || zone === 'mall' || zone === 'logan') {
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * Math.PI * 2 + 0.2;
+          const r = zone === 'park' ? 9 : 25;
+          city.addProp('bench', b.cx + Math.sin(a) * r, b.cz + Math.cos(a) * r, a + Math.PI);
+          if (k % 4 === 0) city.addProp('bin', b.cx + Math.sin(a + 0.25) * r, b.cz + Math.cos(a + 0.25) * r, 0);
+        }
+      }
+    }
+  }
+
   // ---- City Hall ---------------------------------------------------------
+  // Second Empire: a square block round a courtyard, mansard roofs with
+  // dormers, a pavilion at each corner and in the middle of each side, and
+  // the clock tower on the north side with William Penn on top.
   {
     const s = COL.stone;
+    const trim = 0xe2dccb;
+    const slate = COL.slate;
+    const patina = 0x5d6a5a;
+    const fixed = { fixed: true, solid: false, color: s };
     city.addBuilding('stone', 0, 0, 72, 72, 24, { fixed: true, color: s });
-    city.addBuilding('stone', 0, -26, 20, 20, 80, { fixed: true, solid: false, color: s });
+    city.addBuilding('stone', 0, -26, 20, 20, 80, fixed);
     const m = new MeshBuilder();
-    m.box(68, 6, 68, 0, 24, 0, COL.slate); // mansard roof
-    m.box(40, 1.2, 40, 0, 30, 0, 0x3b444e);
-    for (const [cx, cz] of [[-30, -30], [30, -30], [-30, 30], [30, 30]]) {
-      m.box(16, 34, 16, cx, 0, cz, s);
-      m.cone(11.5, 12, cx, 34, cz, COL.slate, 4, Math.PI / 4);
+    m.box(73.6, 1.5, 73.6, 0, 0.3, 0, 0xa59f92); // granite base course
+    m.box(74.2, 1.0, 74.2, 0, 23.2, 0, trim); // main cornice
+    m.add(GEO.frustum(0.9), slate, 0, 24.2, 0, 70, 7, 70);
+    m.box(58, 0.5, 58, 0, 31.2, 0, 0x33393f);
+    // Dormers along the mansard, between the pavilions.
+    for (const u of [-18, -13.5, 13.5, 18]) {
+      for (const [dx, dz, ry] of [[u, 34.2, 0], [u, -34.2, 0], [34.2, u, Math.PI / 2], [-34.2, u, Math.PI / 2]]) {
+        if (dz < -30 && Math.abs(dx) < 12) continue;
+        m.box(2.6, 3.6, 2.6, dx, 24.6, dz, trim, ry);
+        m.prism(3.2, 1.5, 3.0, dx, 28.2, dz, slate, ry);
+      }
     }
-    for (const [cx, cz, w, dd] of [[0, 34, 22, 8], [-34, 0, 8, 22], [34, 0, 8, 22]]) {
-      m.box(w, 32, dd, cx, 0, cz, s);
-      m.cone(Math.max(w, dd) * 0.62, 9, cx, 32, cz, COL.slate, 4, Math.PI / 4);
+
+    // Corner pavilions.
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const cx = sx * 30;
+      const cz = sz * 30;
+      city.addBuilding('stone', cx, cz, 16, 16, 34, fixed);
+      m.box(17.6, 1.0, 17.6, cx, 33.2, cz, trim);
+      m.add(GEO.frustum(0.42), slate, cx, 34.2, cz, 16.6, 11, 16.6);
+      m.box(7.4, 0.6, 7.4, cx, 45.2, cz, trim);
+      m.cyl(0.25, 3.2, cx, 45.8, cz, 0x33393f, 5);
+      for (const o of [-4.4, 4.4]) {
+        // Paired columns through the upper floors, on both street faces.
+        m.cyl(0.8, 13, cx + sx * 8.9, 9.6, cz + o, trim, 10);
+        m.cyl(0.8, 13, cx + o, 9.6, cz + sz * 8.9, trim, 10);
+      }
+      m.box(2.2, 1.2, 11.4, cx + sx * 8.9, 22.6, cz, trim);
+      m.box(11.4, 1.2, 2.2, cx, 22.6, cz + sz * 8.9, trim);
+      m.box(2.4, 1.0, 11.6, cx + sx * 8.9, 8.6, cz, trim);
+      m.box(11.6, 1.0, 2.4, cx, 8.6, cz + sz * 8.9, trim);
     }
-    // The tower, with its clock faces and William Penn on top.
-    m.box(23, 2.5, 23, 0, 80, -26, s);
-    m.cyl(10, 18, 0, 82.5, -26, s, 8);
+
+    // Centre pavilions on the south, east and west, each with an arched portal.
+    for (const [px, pz, ry] of [[0, 34, 0], [34, 0, Math.PI / 2], [-34, 0, -Math.PI / 2]]) {
+      const alongX = ry === 0;
+      const w = alongX ? 22 : 8;
+      const dd = alongX ? 8 : 22;
+      city.addBuilding('stone', px, pz, w, dd, 32, fixed);
+      const part = new MeshBuilder();
+      part.box(23.4, 1.0, 9.4, 0, 31.2, 0, trim);
+      part.add(GEO.frustum(0.62), slate, 0, 32.2, 0, 22.4, 9, 8.6);
+      part.box(13, 0.5, 4.6, 0, 41.2, 0, trim);
+      // Portal: a dark archway in a pale surround, columns either side, a balcony over it.
+      part.box(9.6, 13, 0.5, 0, 0.3, 4.1, trim);
+      part.add(GEO.cyl(18), trim, 0, 13.3, 4.1, 4.8, 0.5, 4.8, 0, Math.PI / 2, 0);
+      part.box(7, 12, 0.5, 0, 0.3, 4.35, 0x241f1b);
+      part.add(GEO.cyl(18), 0x241f1b, 0, 12.3, 4.35, 3.5, 0.5, 3.5, 0, Math.PI / 2, 0);
+      for (const o of [-9, -6.4, 6.4, 9]) part.cyl(0.8, 15, o, 1.8, 5.0, trim, 10);
+      part.box(21, 1.0, 2.8, 0, 16.8, 5.0, trim);
+      part.box(21, 1.3, 0.3, 0, 17.8, 6.2, trim);
+      for (const o of [-8, 0, 8]) part.cyl(0.55, 4.2, o, 26.4, 4.6, patina, 6, 0.6); // statues in the attic storey
+      part.place(px, pz, ry);
+      m.merge(part);
+    }
+
+    // The tower.
+    const tz = -26;
+    for (const [ox, oz] of [[-9.4, -9.4], [9.4, -9.4], [-9.4, 9.4], [9.4, 9.4]]) m.box(2.8, 80, 2.8, ox, 0, tz + oz, trim);
+    for (const y of [32, 56]) m.box(22.4, 1.3, 22.4, 0, y, tz, trim);
+    m.box(24.4, 2.6, 24.4, 0, 80, tz, trim);
+    for (const [ox, oz] of [[-10.6, -10.6], [10.6, -10.6], [-10.6, 10.6], [10.6, 10.6]]) {
+      // The bronze groups at the corners of the cornice.
+      m.cyl(1.4, 4.6, ox, 82.6, tz + oz, patina, 6, 0.6);
+      m.ball(1.0, ox, 88, tz + oz, patina);
+    }
+    m.cyl(10, 18, 0, 82.6, tz, s, 8);
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2 + Math.PI / 8;
+      m.cyl(0.7, 15, Math.sin(a) * 10.5, 83.6, tz + Math.cos(a) * 10.5, trim, 8);
+    }
     for (let k = 0; k < 4; k++) {
       const a = (k * Math.PI) / 2;
-      m.add(GEO.cyl(16), 0xf3e7b8, Math.sin(a) * 10, 91.5, -26 + Math.cos(a) * 10, 4.6, 0.5, 4.6, a, Math.PI / 2, 0);
-      m.add(GEO.cube(), 0x2a2a2a, Math.sin(a) * 10.6, 92.6, -26 + Math.cos(a) * 10.6, 0.5, 3.4, 0.3, a);
+      const sx = Math.sin(a);
+      const cz2 = Math.cos(a);
+      m.add(GEO.cyl(20), 0x2d2a26, sx * 9.9, 91.6, tz + cz2 * 9.9, 5.4, 0.5, 5.4, a, Math.PI / 2, 0);
+      m.add(GEO.cyl(20), 0xf1e6bd, sx * 10.15, 91.6, tz + cz2 * 10.15, 4.6, 0.5, 4.6, a, Math.PI / 2, 0);
+      m.add(GEO.cube(), 0x1d1b19, sx * 10.75, 92.9, tz + cz2 * 10.75, 0.5, 3.6, 0.2, a);
+      m.add(GEO.cube(), 0x1d1b19, sx * 10.75 + cz2 * 1.1, 91.9, tz + cz2 * 10.75 - sx * 1.1, 0.5, 2.6, 0.2, a, 0, 1.2);
     }
-    m.cyl(11.2, 1.6, 0, 100.5, -26, s, 8);
-    m.dome(9, 13, 0, 102, -26, COL.slate, 8);
-    m.cyl(3.2, 5, 0, 114, -26, s, 8);
-    m.cyl(1.9, 6.5, 0, 119, -26, COL.bronze, 6, 0.75); // Penn's coat
-    m.ball(1.25, 0, 126.6, -26, COL.bronze);
-    m.cyl(1.9, 0.4, 0, 127.5, -26, COL.bronze, 8); // hat brim
-    m.cyl(1.0, 1.0, 0, 127.9, -26, COL.bronze, 8);
+    m.cyl(11.4, 1.6, 0, 100.6, tz, trim, 8);
+    m.dome(9, 13, 0, 102.2, tz, slate, 12);
+    for (let k = 0; k < 6; k++) {
+      const a = (k / 6) * Math.PI * 2;
+      m.cyl(0.35, 5, Math.sin(a) * 2.9, 114.2, tz + Math.cos(a) * 2.9, trim, 6);
+    }
+    m.cyl(2.5, 5, 0, 114.2, tz, s, 8);
+    m.cyl(3.6, 0.7, 0, 119.2, tz, trim, 8);
+    m.cyl(1.9, 6.5, 0, 119.9, tz, COL.bronze, 8, 0.72); // Penn's coat
+    m.ball(1.25, 0, 127.4, tz, COL.bronze);
+    m.cyl(1.9, 0.4, 0, 128.2, tz, COL.bronze, 10); // hat brim
+    m.cyl(1.0, 1.0, 0, 128.6, tz, COL.bronze, 10);
     d.merge(m);
-    // Dilworth Park furniture on the west side: planters and lamps at the edges.
+
+    // Dilworth Park on the west side: planters at the far edge, lamps round the square.
     for (const z of [-60, -30, 30, 60]) {
       d.box(8, 1.2, 3, -142, 0.3, z, 0x8d8a83);
       tree(-142, z, 0.8);
+      city.addProp('bench', -137.5, z + 6, Math.PI / 2);
+      city.addProp('bin', -137.5, z - 5, 0);
     }
+    for (let t = -130; t <= 60; t += 27) {
+      city.addProp('lamp', t, -66, Math.PI / 2);
+      city.addProp('lamp', t, 66, -Math.PI / 2);
+    }
+    for (const z of [-44, 0, 44]) city.addProp('lamp', -145, z, 0);
   }
 
   // ---- Benjamin Franklin Parkway ------------------------------------------
@@ -451,12 +603,24 @@ export function buildPhiladelphia(scene) {
     const toWorld = (lx, lz) => ({ x: M.x + lx * cos + lz * sin, z: M.z - lx * sin + lz * cos });
     const c = COL.museum;
     const m = new MeshBuilder();
+    const hall = { fixed: true, solid: false, color: c, rot: yaw, y: 6 };
     m.box(116, 6, 64, 0, 0, 0, 0xcbb894); // terrace
-    m.box(88, 20, 22, 0, 6, -18, c); // main block
-    m.prism(24, 7, 90, 0, 26, -18, COL.teal, Math.PI / 2);
+    m.box(117, 0.7, 65, 0, 5.6, 0, 0xd9c9a4);
+    const mainAt = toWorld(0, -18);
+    city.addBuilding('stone', mainAt.x, mainAt.z, 88, 22, 20, hall); // main block
+    m.box(90, 1.2, 24, 0, 25.2, -18, 0xe6cf98);
+    m.prism(24, 7, 90, 0, 26.4, -18, COL.teal, Math.PI / 2);
+    // Bronze doors behind the columns, and banners hung between them.
+    for (const ox of [-10, 0, 10]) m.box(4.6, 9.5, 0.5, ox, 6, -6.9, 0x3b2f24);
+    for (const [ox, bc] of [[-12.5, 0xa3271f], [-2.5, 0x1f4f8f], [7.5, 0xc79a2a]]) m.box(3.0, 9, 0.25, ox + 2.5, 11, -3.1, bc);
     for (const s of [-1, 1]) {
-      m.box(22, 17, 34, s * 40, 6, 9, c); // wings
-      m.prism(24, 6, 36, s * 40, 23, 9, COL.teal);
+      const wingAt = toWorld(s * 40, 9);
+      city.addBuilding('stone', wingAt.x, wingAt.z, 22, 34, 17, hall); // wings
+      m.box(23.4, 1.0, 35.4, s * 40, 22.4, 9, 0xe6cf98);
+      m.prism(24, 6, 36, s * 40, 23.4, 9, COL.teal);
+      // Urns at the head of the steps.
+      m.cyl(1.3, 1.6, s * 30.5, 6.6, 31, 0xbfae88, 8);
+      m.cyl(0.9, 2.2, s * 30.5, 8.2, 31, 0x5d6a5a, 8, 1.5);
       for (const ox of [-7.5, -2.5, 2.5, 7.5]) m.cyl(1.15, 13, s * 40 + ox, 6, 27.5, 0xefd9a6, 8);
       m.box(22, 2, 4, s * 40, 19, 27.5, c);
       m.prism(22, 5, 4, s * 40, 21, 27.5, 0xe6c98c);
@@ -588,6 +752,23 @@ export function buildPhiladelphia(scene) {
         }
       }
     };
+    // The stiffening truss along each side of the deck.
+    for (const sd of [-1, 1]) {
+      d.box(560, 0.9, 0.9, 690, 16.5, z + sd * 12, c);
+      for (let x = 418; x < 960; x += 14) {
+        const up = Math.round((x - 418) / 14) % 2 === 0 ? 1 : -1;
+        d.box(Math.hypot(14, 5.5), 0.7, 0.7, x + 7, 19.2, z + sd * 12, c, 0, 0, up * Math.atan2(5.5, 14));
+      }
+    }
+    // Cross-bracing between the tower legs.
+    for (const tx of towers) {
+      for (const [y0, y1] of [[33, 52], [55, 74]]) {
+        const len = Math.hypot(25, y1 - y0);
+        const tilt = Math.atan2(y1 - y0, 25);
+        d.box(1.2, 1.2, len, tx, (y0 + y1) / 2 - 0.6, z, c, 0, tilt, 0);
+        d.box(1.2, 1.2, len, tx, (y0 + y1) / 2 - 0.6, z, c, 0, -tilt, 0);
+      }
+    }
     cable(402, 27, 500, 90, 6);
     cable(500, 90, 690, 90, 52);
     cable(690, 90, 880, 27, 6);
@@ -627,12 +808,12 @@ export function buildPhiladelphia(scene) {
     d.box(3.4, 6, 18, x1, 18.9, g.z, 0x2f5a43);
     // The gate itself can be punched down.
     city.gate = city.addBuilding('plain', x1, g.z, 2.4, 23, 10.5, { color: 0x3f6b52, hp: 26 });
-    city.addSlab(x0 + 2, z0 + 2, x1 - 2, z1 - 2, 0x7fae5c, 0.3);
+    city.addSlab(x0 + 2, z0 + 2, x1 - 2, z1 - 2, 0x7a9150, 0.3);
     city.addSlab(x1 + 2, g.z - 12, -500, g.z + 12, COL.sidewalk, 0.27);
     // The ape house: a rock den at the back of the yard.
     const rocks = [[-604, g.z - 6, 9], [-606, g.z + 8, 7], [-598, g.z + 16, 5.5], [-600, g.z - 20, 6.5], [-608, g.z - 28, 5]];
     for (const [rx, rz, rr] of rocks) d.ball(rr, rx, rr * 0.45, rz, 0x7c7f86, 1.2, 0.9, 1.1, 0);
-    d.cyl(11, 0.14, -555, 0.3, g.z + 26, 0x58a8d8, 12);
+    d.cyl(11, 0.14, -555, 0.3, g.z + 26, 0x2f5f78, 12);
     for (const [tx, tz] of [[-540, g.z - 36], [-580, g.z - 38], [-590, g.z + 38], [-534, g.z + 36], [-562, g.z - 30]]) tree(tx, tz, 1.3);
 
     // 30th Street Station.

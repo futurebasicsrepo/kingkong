@@ -1,7 +1,7 @@
 // Development viewer for characters: /view.html?who=ape&pose=run&phase=1.2&angle=0.6&dist=38
 import * as THREE from 'three';
 import { createStage } from './engine/render.js';
-import { Ape, ATTACKS } from './actors/ape.js';
+import { Ape, ATTACKS, APES } from './actors/ape.js';
 import { Raccoon, Pigeon } from './actors/enemies.js';
 import { Eagle } from './actors/eagle.js';
 
@@ -48,7 +48,7 @@ const game = { world: null, stage };
 let actor;
 let tick = () => {};
 if (who === 'ape') {
-  actor = new Ape(game);
+  actor = new Ape(game, APES.find((v) => v.id === q.get('v')) || APES[0]);
   const a = actor;
   if (pose === 'run') a.speed = 27;
   else if (pose === 'walk') a.speed = 10;
@@ -56,7 +56,9 @@ if (who === 'ape') {
     a.state = 'attack';
     a.attack = { kind: pose, t: ATTACKS[pose].hit + (q.get('pre') ? -0.12 : 0.02), hit: true };
   } else if (pose === 'victory') a.victory = true;
-  else if (pose !== 'idle') a.state = pose;
+  else if (pose === 'climb') {
+    a.state = 'climb';
+  } else if (pose !== 'idle') a.state = pose;
   a.phase = +(q.get('phase') || 0.9);
   a.t = 0.1;
   tick = (dt) => {
