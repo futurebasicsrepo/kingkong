@@ -17,6 +17,7 @@ export class Hud {
           <div class="who"><b></b><span id="score">0</span></div>
           <div class="bar hp"><i id="hp"></i></div>
           <div class="bar rage"><i id="rage"></i><em id="rage-tip">ROAR</em></div>
+          <div id="gold"></div>
         </div>
         <div class="hud-tc">
           <div id="objective"><b></b><span></span></div>
@@ -85,6 +86,14 @@ export class Hud {
 
   show(on) {
     this.el.classList.toggle('hidden', !on);
+  }
+
+  setGold(n, total) {
+    const el = this.el.querySelector('#gold');
+    el.textContent = `GOLD ${n}/${total}`;
+    el.classList.remove('pop');
+    void el.offsetWidth;
+    if (n) el.classList.add('pop');
   }
 
   setName(name) {
@@ -166,9 +175,8 @@ export class Hud {
       }
       this.combo.classList.toggle('on', game.combo >= 3);
     }
-    if (game.boss && !game.boss.dead && game.bossActive) {
-      this.bossHp.style.transform = `scaleX(${clamp01(game.boss.hp / game.boss.maxHp)})`;
-    }
+    const big = game.barTarget;
+    if (big && !big.dead) this.bossHp.style.transform = `scaleX(${clamp01(big.hp / big.maxHp)})`;
     this.hurt.style.opacity = Math.max(0, (this.hurtT = (this.hurtT || 0) - dt * 2.2));
 
     // Compass: an arrow toward the objective, and how far it is.
@@ -204,6 +212,16 @@ export class Hud {
     }
     g.fillStyle = '#ffd23a';
     for (const pk of game.pickups) g.fillRect(X(pk.x) - 2, Z(pk.z) - 2, 4, 4);
+    // Golden pretzels still to find: a ringed gold dot.
+    g.strokeStyle = '#0c0c0d';
+    g.lineWidth = 2;
+    for (const gp of game.golds || []) {
+      if (gp.got) continue;
+      g.beginPath();
+      g.arc(X(gp.x), Z(gp.z), 5, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
+    }
     for (const e of game.enemies) {
       if (e.dead) continue;
       g.fillStyle = e.boss ? '#ff2a1a' : '#ff6a5a';
@@ -348,7 +366,11 @@ export class Screens {
       <div class="select-bottom"><div class="apes">${cards}</div><button class="big" data-act="tour">NEXT</button></div></div>`;
   }
 
-  tour({ cities }) {
+  levels(level) {
+    return `<div class="levels">${['easy', 'normal', 'hard'].map((id) => `<button class="${id === level ? 'on' : ''}" data-act="level:${id}">${id.toUpperCase()}</button>`).join('')}</div>`;
+  }
+
+  tour({ cities, level }) {
     const cards = cities
       .map(
         (c, i) => `<button class="stop ${c.open ? 'open' : 'locked'}" ${c.open ? 'data-act="start"' : 'disabled'}>
@@ -359,15 +381,16 @@ export class Screens {
         </button>`
       )
       .join('');
-    return `<div class="tour"><small>THE ROUTE</small><h2>WORLD TOUR</h2><div class="stops">${cards}</div><button class="link" data-act="select">Back</button></div>`;
+    return `<div class="tour"><small>THE ROUTE</small><h2>WORLD TOUR</h2><div class="stops">${cards}</div>${this.levels(level)}<button class="link" data-act="select">Back</button></div>`;
   }
 
-  pause({ muted, quality }) {
+  pause({ muted, quality, level }) {
     return `<div class="panel"><h2>PAUSED</h2>
         <button class="big" data-act="resume">RESUME</button>
         <button data-act="retry">Restart from checkpoint</button>
         <button data-act="mute">Sound: ${muted ? 'off' : 'on'}</button>
         <button data-act="quality">Graphics: ${quality}</button>
+        <button data-act="level:next">Difficulty: ${level}</button>
         <button data-act="quit">Quit to title</button>
         ${this.controls(this.game.input.touch)}
       </div>`;
@@ -377,7 +400,7 @@ export class Screens {
     return `<div class="panel"><small>${this.game.player.name.toUpperCase()} IS DOWN</small><h2>KNOCKED OUT</h2><p>Shake it off. The tour is not over.</p><button class="big" data-act="retry">GET UP</button><button data-act="quit">Quit to title</button></div>`;
   }
 
-  win({ stats, next }) {
+  win({ stats, next, level, golds }) {
     const m = Math.floor(stats.time / 60);
     const s = String(Math.floor(stats.time % 60)).padStart(2, '0');
     return `<div class="panel win"><small>STOP ONE CLEARED</small><h2>PHILADELPHIA IS YOURS</h2>
@@ -386,6 +409,8 @@ export class Screens {
           <div><b>${m}:${s}</b><span>Time</span></div>
           <div><b>${stats.kos}</b><span>Animals battered</span></div>
           <div><b>${stats.bestCombo}</b><span>Best combo</span></div>
+          <div><b>${stats.gold}/${golds}</b><span>Golden pretzels</span></div>
+          <div><b>${level}</b><span>Difficulty</span></div>
           <div><b>${stats.buildings}</b><span>Buildings flattened</span></div>
           <div><b>$${Math.round(stats.bill).toLocaleString()}</b><span>Damage bill</span></div>
         </div>

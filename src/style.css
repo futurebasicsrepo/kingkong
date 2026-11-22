@@ -132,9 +132,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .stop.locked { opacity: 0.6; cursor: default; }
 @media (max-width: 720px) { .stops { grid-template-columns: repeat(2, 1fr); } }
 
+.panel.win { width: min(680px, 100%); }
 .panel { text-align: center; padding: 26px 30px 28px; background: rgba(12, 12, 13, 0.88); border: 2px solid rgba(243, 238, 228, 0.14); border-radius: 12px; width: min(560px, 100%); }
 .panel h2 { font-size: clamp(34px, min(8vw, 11vh), 72px); margin: 6px 0 10px !important; }
-.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0 6px; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0 6px; }
 .stats div { background: rgba(243, 238, 228, 0.07); border-radius: 6px; padding: 10px 6px; }
 .stats b { display: block; font: 400 26px var(--display); color: var(--gold); }
 .stats span { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
@@ -182,3 +183,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
   #screen .ape { min-width: 76px; padding: 6px 10px 7px; }
   .ape b { font-size: 17px; }
 }
+
+/* ---- difficulty and gold ---- */
+.levels { display: flex; gap: 8px; justify-content: center; margin-top: 14px; }
+#screen .levels button { margin: 0; padding: 7px 18px 8px; font: 400 18px var(--display); letter-spacing: 0.06em; color: var(--muted); }
+#screen .levels button.on { border-color: var(--flare); background: var(--flare); color: #fff; }
+#gold { margin-top: 6px; font: 400 15px var(--display); letter-spacing: 0.06em; color: var(--gold); text-shadow: 0 2px 0 rgba(0, 0, 0, 0.7); }
+#gold.pop { animation: pop 0.4s ease-out; transform-origin: left center; }
+@media (max-width: 720px) { .stats { grid-template-columns: repeat(2, 1fr); } }

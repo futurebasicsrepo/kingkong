@@ -2,7 +2,7 @@
 
 A browser brawler, built phone-first for players aged about 8 to 16. One very large ape goes on tour through eight cities and batters the animals that run each one. The first stop, Philadelphia, is playable.
 
-There are five apes to play as: **Trevor, Lukas, Sloan, Calvin and Zo**. They play the same and differ in fur, scarf and gear. The game's title is still a working title. All characters are original.
+There are five apes to play as: **Trevor, Lukas, Sloan, Calvin and Zo**. They play the same and differ in fur, scarf and gear. All characters are original.
 
 ```
 index.html            the game page
@@ -31,7 +31,9 @@ Everything is generated in code: no model, texture or audio files.
 | Roar (when the orange bar is full: stuns, then double damage) | L, R or Q | ROAR | B |
 | Pause / mute | Esc or P / M | II button | Start |
 
-Philadelphia runs: break out of the zoo, clear the raccoons off Eakins Oval below the Art Museum steps, swat the pigeons at Logan Circle, then fight the eagle at City Hall.
+Philadelphia runs: break out of the zoo, clear the raccoons off Eakins Oval below the Art Museum steps, swat the pigeons at Logan Circle, take Independence Mall back from Big Bandit (the king of the Trash Pandas), then fight the eagle at City Hall.
+
+Three difficulty levels, chosen on the tour screen or in the pause menu: **Easy**, **Normal** and **Hard**. They change how hard and how often the animals hit, how many attack at once, how tough they and the boss are, and how generous the pretzels are. On Hard, an animal that has started a swing cannot be jabbed out of it.
 
 Other things to do:
 
@@ -39,6 +41,7 @@ Other things to do:
 - **Rooftops.** Roofs can be stood on and run across. A dive from high up makes a much bigger crater.
 - **Wreck things.** Buildings, trees, street lamps and parked cars can all be flattened; landmarks cannot. A car kicked while an animal is in front of the ape flies at it.
 - **Pretzels** heal. Clearing an objective heals a little too.
+- **Golden pretzels.** Ten are hidden round the city, some on roofs and one on top of the tallest tower. They show as ringed gold dots on the map.
 - There is a secret on Independence Mall.
 
 ## The tour
@@ -61,6 +64,7 @@ Each later city needs a map file like `src/world/philadelphia.js`, its animals, 
 - Two graphics tiers. Phones start on the lighter one; the pause menu switches.
 - The game watches its own frame rate and lowers the drawing resolution when a device cannot keep up, then raises it again when there is headroom.
 - On touch devices, starting a game asks for full screen and landscape where the browser allows it; a phone held upright is asked to turn sideways.
+- The game can be added to a phone's home screen (it ships a web app manifest and icons in `public/`). Opened from there it runs full screen in landscape, which is the only way to get that on iPhones.
 - Hits and knocks rumble on phones that support vibration.
 
 ## Running it
@@ -78,7 +82,7 @@ npm test
 
 Handy URLs while developing:
 
-- `/?autoplay=1` skips the title. `&start=oval`, `&start=logan` or `&start=boss` jumps to that checkpoint. `&god=1` refills health when hit. `&ape=zo` picks an ape. `&gov=0` turns the frame-rate governor off.
+- `/?autoplay=1` skips the title. `&start=oval`, `&start=logan`, `&start=mall` or `&start=boss` jumps to that checkpoint. `&level=easy` or `&level=hard` sets the difficulty. `&god=1` refills health when hit. `&ape=zo` picks an ape. `&gov=0` turns the frame-rate governor off.
 - `/?quality=high` or `/?quality=low` forces the graphics tier (phones default to low; the pause menu has a toggle).
 - `/city.html?cam=x,y,z&look=x,y,z` shows the city alone. `/view.html?who=ape&v=sloan&pose=run` shows a character (`who`: ape, raccoon, thrower, pigeon, eagle; `v`: which ape).
 

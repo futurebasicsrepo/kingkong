@@ -24,7 +24,19 @@ export const TOUR = [
   { name: 'Shanghai', rival: 'Huangpu, the Tiger of the Bund' },
 ];
 
-const SCORE = { raccoon: 100, thrower: 130, pigeon: 120, eagle: 2500 };
+const SCORE = { raccoon: 100, thrower: 130, pigeon: 120, chief: 800, eagle: 2500 };
+
+// How hard the animals hit back. hp and dmg scale the animals; cool stretches
+// the gaps between their attacks; tokens is how many may attack at once;
+// quick and stuck speed up the boss and shorten the time he is stuck;
+// drops and heal are how generous the pretzels are; armor means an animal
+// that has started a swing cannot be jabbed out of it.
+export const LEVELS = {
+  easy: { id: 'easy', name: 'Easy', hp: 0.8, dmg: 0.6, cool: 1.45, tokens: 1, bossHp: 0.75, quick: 1.2, stuck: 1.3, drops: 1.6, heal: 40 },
+  normal: { id: 'normal', name: 'Normal', hp: 1, dmg: 1.15, cool: 1, tokens: 2, bossHp: 1, quick: 1, stuck: 1, drops: 1, heal: 25 },
+  hard: { id: 'hard', name: 'Hard', hp: 1.35, dmg: 1.7, cool: 0.6, tokens: 3, bossHp: 1.35, quick: 0.8, stuck: 0.8, drops: 0.5, heal: 10, armor: true },
+};
+
 
 export class Game {
   constructor(canvas, ui) {
@@ -36,6 +48,13 @@ export class Game {
     } catch {
       /* private mode */
     }
+    let level = q.get('level');
+    try {
+      level = level || localStorage.getItem('level');
+    } catch {
+      /* private mode */
+    }
+    this.diff = LEVELS[level] || LEVELS.normal;
     this.stage = createStage(canvas, { quality: q.get('quality') || saved || undefined });
     this.world = buildPhiladelphia(this.stage.scene);
     this.fx = new Fx(this.stage.scene);
@@ -60,7 +79,9 @@ export class Game {
     this.enemies = [];
     this.hazards = [];
     this.pickups = [];
-    this.tokens = 2;
+    this.tokens = this.diff.tokens;
+    this.barTarget = null;
+    this.cut = null;
     this.time = 0;
     this.freeze = 0;
     this.slow = 0;
@@ -89,7 +110,12 @@ export class Game {
         spawn: { x: P.oval.x + 10, z: P.oval.z + 10, yaw: 0.85 }, call: ['INCOMING', 'Jump and punch, or wait for the dive'],
         waves: [[['pigeon', 4]], [['pigeon', 3], ['raccoon', 3]], [['thrower', 2], ['pigeon', 3], ['raccoon', 3]]],
       },
-      { type: 'boss', title: 'City Hall', text: 'Baldwin is waiting on the tower', at: P.dilworth, r: 70, spawn: { x: -117, z: -117, yaw: 0.6 } },
+      {
+        type: 'wave', title: 'Independence Mall', text: 'The Trash Panda king is ringing the Liberty Bell', at: { x: 273, z: -92 }, r: 60,
+        spawn: { x: P.logan.x + 6, z: P.logan.z + 34, yaw: 1.3 }, call: ['OLD CITY', 'Get them off the Mall'],
+        waves: [[['raccoon', 3], ['pigeon', 2]], [['thrower', 2], ['raccoon', 3]], [['chief', 1], ['raccoon', 2]]],
+      },
+      { type: 'boss', title: 'City Hall', text: 'Baldwin is waiting on the tower', at: P.dilworth, r: 70, spawn: { x: 150, z: -30, yaw: -1.5 } },
     ];
     this.checkpoint = 0;
     this.objIndex = 0;
@@ -149,14 +175,15 @@ export class Game {
       if (document.hidden && this.state === 'play') this.pause();
     });
 
-    const jump = { oval: 1, logan: 2, boss: 3 }[q.get('start')];
+    this.placeGolds();
+    const jump = { oval: 1, logan: 2, mall: 3, boss: 4 }[q.get('start')];
     if (jump !== undefined) this.checkpoint = jump;
     if (q.get('autoplay') || jump !== undefined) this.start();
     else this.screens.show('title');
   }
 
   resetStats() {
-    this.stats = { score: 0, kos: 0, buildings: 0, bill: 0, bestCombo: 0, time: 0 };
+    this.stats = { score: 0, kos: 0, buildings: 0, bill: 0, bestCombo: 0, time: 0, gold: 0 };
   }
 
   after(seconds, fn) {
@@ -165,8 +192,28 @@ export class Game {
 
   // ---- flow --------------------------------------------------------------
 
+  setLevel(id) {
+    const order = ['easy', 'normal', 'hard'];
+    if (id === 'next') id = order[(order.indexOf(this.diff.id) + 1) % 3];
+    const next = LEVELS[id];
+    if (!next) return;
+    this.tokens += next.tokens - this.diff.tokens;
+    this.diff = next;
+    try {
+      localStorage.setItem('level', id);
+    } catch {
+      /* private mode */
+    }
+  }
+
   action(name) {
     if (name.startsWith('pick:')) return this.pickApe(name.slice(5));
+    if (name.startsWith('level:')) {
+      this.setLevel(name.slice(6));
+      if (this.state === 'pause') this.screens.show('pause', { muted: this.audio.muted, quality: this.stage.quality, level: this.diff.name });
+      else this.screens.show('tour', { cities: TOUR, level: this.diff.id });
+      return;
+    }
     switch (name) {
       case 'select':
         this.showSelect();
@@ -174,7 +221,7 @@ export class Game {
       case 'tour':
         this.player.showcase = null;
         this.state = 'title';
-        this.screens.show('tour', { cities: TOUR });
+        this.screens.show('tour', { cities: TOUR, level: this.diff.id });
         break;
       case 'title':
         this.screens.show('title');
@@ -190,7 +237,7 @@ export class Game {
         break;
       case 'mute':
         this.audio.setMuted(!this.audio.muted);
-        this.screens.show('pause', { muted: this.audio.muted, quality: this.stage.quality });
+        this.screens.show('pause', { muted: this.audio.muted, quality: this.stage.quality, level: this.diff.name });
         break;
       case 'quality': {
         const next = this.stage.quality === 'high' ? 'low' : 'high';
@@ -273,7 +320,7 @@ export class Game {
   pause() {
     if (this.state !== 'play') return;
     this.state = 'pause';
-    this.screens.show('pause', { muted: this.audio.muted, quality: this.stage.quality });
+    this.screens.show('pause', { muted: this.audio.muted, quality: this.stage.quality, level: this.diff.name });
   }
 
   resume() {
@@ -301,7 +348,9 @@ export class Game {
     this.hazards = [];
     this.missiles = [];
     this.fx.clear();
-    this.tokens = 2;
+    this.tokens = this.diff.tokens;
+    this.barTarget = null;
+    this.cut = null;
     this.timers = [];
     this.slow = 0;
     this.freeze = 0;
@@ -340,7 +389,7 @@ export class Game {
     this.checkpoint = Math.min(this.objectives.length - 1, this.objIndex + 1);
     this.audio.play('objective');
     this.stats.score += 500;
-    this.player.heal(25);
+    this.player.heal(this.diff.heal);
     if (o.type === 'wave') {
       this.hud.toast('CLEARED', o.title);
       for (let k = 0; k < 2; k++) this.dropPretzel(o.at.x + rand(-14, 14), o.at.z + rand(-14, 14));
@@ -371,7 +420,9 @@ export class Game {
         this.seen.gate = true;
         this.hud.hint(this.input.touch ? 'Tap <b>PUNCH</b> to smash the gate' : 'Punch the gate: <b>J</b> or <b>click</b>');
       }
-      if (this.world.gate.state !== 'up') this.completeObjective();
+      // Out through the gate, or over the wall: either way he is out.
+      const out = p.pos.x > o.at.x + 8 || Math.abs(p.pos.z - o.at.z) > 56 || p.pos.x < o.at.x - 104;
+      if (this.world.gate.state !== 'up' || (out && p.onGround)) this.completeObjective();
     } else if (o.type === 'wave') {
       if (!o.engaged) {
         if (d < o.r) {
@@ -397,8 +448,22 @@ export class Game {
       if (!o.engaged && d < o.r) {
         o.engaged = true;
         this.bossActive = true;
-        this.boss.setState('enter');
+        this.barTarget = this.boss;
         this.hud.showBoss(this.boss);
+        // The entrance: cut to him on the tower for a moment before he comes down.
+        this.cut = { t: 0 };
+        this.controlsOn = false;
+        this.boss.taunt = true;
+        this.after(2.5, () => {
+          const b = this.boss;
+          const p = this.player;
+          this.cut = null;
+          this.controlsOn = true;
+          b.taunt = false;
+          b.setState('enter');
+          this.cam.yaw = Math.atan2(b.pos.x - p.pos.x, b.pos.z - p.pos.z);
+          this.cam.snap(p, true);
+        });
         this.screens.intro('THE BOSS OF BROAD STREET', this.boss.name, 'Dodge the red marks. Hit him mid-swoop, or batter him while his talons are stuck.');
         this.audio.play('screech');
         this.audio.heat = 1;
@@ -430,7 +495,13 @@ export class Game {
 
   spawnEnemy(kind, x, z) {
     let e;
-    if (kind === 'pigeon') e = new Pigeon(this, x, z);
+    if (kind === 'chief') {
+      e = new Raccoon(this, x, z, false, true);
+      this.barTarget = e;
+      this.hud.showBoss(e);
+      this.hud.toast(e.name, e.title, 2200);
+      this.audio.play('roar');
+    } else if (kind === 'pigeon') e = new Pigeon(this, x, z);
     else e = new Raccoon(this, x, z, kind === 'thrower');
     if (kind !== 'pigeon') this.fx.dust(x, 1, z, 6, 3);
     this.enemies.push(e);
@@ -542,7 +613,7 @@ export class Game {
     this.stats.bill += b.w * b.d * b.h * 900;
     this.stats.score += Math.round(40 + big * 60);
     this.hud.float('+' + Math.round(40 + big * 60), b.x, Math.min(b.h, 24), b.z, 'good');
-    if (b !== this.world.gate && Math.random() < 0.14) this.dropPretzel(b.x + rand(-4, 4), b.z + rand(-4, 4));
+    if (b !== this.world.gate && Math.random() < 0.14 * this.diff.drops) this.dropPretzel(b.x + rand(-4, 4), b.z + rand(-4, 4));
   }
 
   // The ground-shaking part of a slam or a heavy landing.
@@ -585,7 +656,14 @@ export class Game {
     this.hud.float(e.boss ? 'K.O.!' : 'KO +' + pts, e.pos.x, e.pos.y + e.height, e.pos.z, 'big');
     this.audio.play('ko');
     if (e.boss) return this.onBossDefeated();
-    if (Math.random() < 0.3) this.dropPretzel(e.pos.x, e.pos.z);
+    if (e === this.barTarget) {
+      this.barTarget = null;
+      this.hud.showBoss(null);
+      this.slow = 0.6;
+      this.hud.toast('DETHRONED', e.name + ' is out of here', 2000);
+      for (let k = 0; k < 2; k++) this.dropPretzel(e.pos.x + rand(-8, 8), e.pos.z + rand(-8, 8));
+    }
+    if (Math.random() < 0.3 * this.diff.drops) this.dropPretzel(e.pos.x, e.pos.z);
   }
 
   onCounter(boss) {
@@ -598,6 +676,7 @@ export class Game {
 
   onBossDefeated() {
     this.bossActive = false;
+    this.barTarget = null;
     this.hud.showBoss(null);
     this.slow = 1.6;
     this.audio.heat = 0;
@@ -614,7 +693,7 @@ export class Game {
     this.after(6.2, () => {
       this.state = 'win';
       this.hud.show(false);
-      this.screens.show('win', { stats: this.stats, next: TOUR[1].name });
+      this.screens.show('win', { stats: this.stats, next: TOUR[1].name, level: this.diff.name, golds: this.golds.length });
     });
   }
 
@@ -750,6 +829,77 @@ export class Game {
         if (h.done) h.mesh.removeFromParent();
         return !h.done;
       });
+    }
+  }
+
+  // ---- golden pretzels: ten hidden round the city -------------------------
+
+  placeGolds() {
+    const w = this.world;
+    const P = w.places;
+    let tallest = null;
+    let house = null;
+    for (const b of w.buildings) {
+      if (!b.solid || b.fixed) continue;
+      if (!b.spire && (!tallest || b.top > tallest.top)) tallest = b;
+      if (!house && b.h < 15 && b.z > 240 && Math.abs(b.x) < 120 && !b.tiers.length) house = b;
+    }
+    const spots = [
+      [-604, P.zooGate.z + 30],
+      [P.terrace.x, P.terrace.z],
+      [P.logan.x + 16, P.logan.z + 10],
+      [-195, 195],
+      [P.liberty.x, P.liberty.z + 16],
+      [78, -117],
+      [-574, 6],
+      [400, -156],
+    ];
+    if (tallest) spots.push([tallest.x, tallest.z]);
+    if (house) spots.push([house.x, house.z]);
+    const mat = new THREE.MeshStandardMaterial({ color: 0xffc21a, roughness: 0.3, metalness: 0.7, emissive: 0xb06a00, emissiveIntensity: 0.9 });
+    const glow = new THREE.MeshBasicMaterial({ color: 0xffd23a, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, fog: false });
+    const beam = new THREE.CylinderGeometry(1.6, 1.6, 44, 10, 1, true).translate(0, 16, 0);
+    this.golds = spots.map(([x, z]) => {
+      const mesh = new THREE.Mesh(this.pretzelGeo, mat);
+      mesh.scale.setScalar(1.7);
+      const light = new THREE.Mesh(beam, glow);
+      light.renderOrder = 3;
+      mesh.add(light);
+      light.scale.setScalar(1 / 1.7);
+      this.stage.scene.add(mesh);
+      return { x, z, mesh, got: false, t: rand(6) };
+    });
+    this.stats.gold = 0;
+    this.hud.setGold(0, this.golds.length);
+    this.updateGolds(0);
+  }
+
+  updateGolds(dt) {
+    const p = this.player;
+    const w = this.world;
+    for (const g of this.golds) {
+      if (g.got) continue;
+      g.t += dt;
+      // They sit on whatever is there: the street, or a roof until it falls.
+      const y = Math.max(w.groundHeight(g.x, g.z), w.roofAt(g.x, g.z, 1e9)) + 6 + Math.sin(g.t * 2.4) * 0.8;
+      g.mesh.position.set(g.x, y, g.z);
+      g.mesh.rotation.y += dt * 1.8;
+      if (this.state === 'play' && Math.hypot(p.pos.x - g.x, p.pos.z - g.z) < 9 && Math.abs(p.pos.y + 6 - y) < 13) {
+        g.got = true;
+        g.mesh.removeFromParent();
+        const n = ++this.stats.gold;
+        const total = this.golds.length;
+        this.stats.score += 250;
+        this.audio.play('objective');
+        this.fx.ring(g.x, y - 5, g.z, 2, 16, 0.5, 0xffd23a);
+        this.hud.setGold(n, total);
+        if (n === total) {
+          this.stats.score += 2000;
+          this.hud.toast('PRETZEL KING', 'All ' + total + ' golden pretzels: +2,000', 3200);
+        } else {
+          this.hud.toast('GOLDEN PRETZEL', n + ' of ' + total + ' found', 1800);
+        }
+      }
     }
   }
 
@@ -912,7 +1062,18 @@ export class Game {
 
     this.world.update(dt);
     this.fx.update(dt);
-    this.cam.update(rawDt, this);
+    if (this.cut) {
+      // Looking up at the boss on his perch.
+      const pl = this.world.places.perch;
+      const c = this.stage.camera;
+      this.cut.t += rawDt;
+      const a = -0.75 + this.cut.t * 0.12;
+      c.position.set(pl.x + Math.sin(a) * 78, pl.y - 6, pl.z + Math.cos(a) * 78);
+      c.lookAt(pl.x, pl.y + 10, pl.z);
+    } else {
+      this.cam.update(rawDt, this);
+    }
+    this.updateGolds(dt);
     this.hud.update(this, rawDt);
     this.stage.setFocus(this.player.pos.x, this.player.pos.y, this.player.pos.z);
     this.input.flush();

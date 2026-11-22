@@ -19,8 +19,9 @@ const types = {
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
   '.txt': 'text/plain; charset=utf-8',
+  '.webmanifest': 'application/manifest+json',
 };
-const compressible = new Set(['.html', '.js', '.css', '.json', '.svg', '.txt']);
+const compressible = new Set(['.html', '.js', '.css', '.json', '.svg', '.txt', '.webmanifest']);
 const cache = new Map();
 
 async function load(path) {
