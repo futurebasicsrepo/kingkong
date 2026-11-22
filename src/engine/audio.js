@@ -177,6 +177,10 @@ export class Audio {
       case 'lose':
         [330, 277, 233, 175].forEach((f, i) => this.tone('sawtooth', f, f * 0.94, 0.4, 0.2, i * 0.28));
         break;
+      case 'bell':
+        [220, 440, 554, 659, 880].forEach((f, i) => this.tone('sine', f, f * 0.995, 2.2 - i * 0.25, 0.3 / (i + 1)));
+        this.noise(0.05, 0.3, 3000, 1200);
+        break;
       case 'ui':
         this.tone('triangle', 440, 660, 0.07, 0.2);
         break;

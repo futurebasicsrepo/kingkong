@@ -39,8 +39,19 @@ function buildRaccoon(thrower) {
     rig.blob(leg, fur, 0, -1.1, 0, 1.12, 1.5, 1.18);
     rig.blob(leg, dark, 0, -2.2, 0.7, 0.98, 0.45, 1.6);
   }
+  // A fat ringed brush of a tail.
   const tail = rig.joint('tail', body, 0, 0.9, -1.9);
-  for (let k = 0; k < 6; k++) rig.blob(tail, k % 2 ? dark : fur, 0, k * 0.8, -0.85 * k, 1.3 - k * 0.07, 1.0, 1.1);
+  for (let k = 0; k < 7; k++) rig.blob(tail, k % 2 ? dark : fur, 0, k * 0.78, -0.82 * k, 1.45 - Math.abs(k - 2.5) * 0.12, 1.05, 1.25);
+  rig.on(tail).add(GEO.cone(6), dark, 0, 5.0, -5.3, 1.0, 1.6, 1.0, 0, -0.8, 0);
+  // Cheek ruffs, ear fluff, whiskers and a scruffy chest: the outline of a raccoon.
+  for (const s of [-1, 1]) {
+    for (let k = 0; k < 3; k++) rig.on(head).add(GEO.cone(5), light, s * 2.5, 1.2 - k * 0.55, 0.5, 0.5, 1.2, 0.5, 0, 0.2 + k * 0.25, s * -(1.2 + k * 0.25));
+    rig.on(head).add(GEO.cone(5), light, s * 1.5, 2.7, 0.35, 0.34, 0.8, 0.34, 0, 0.1, 0);
+    for (let k = 0; k < 3; k++) rig.on(head).box(1.6, 0.05, 0.05, s * 1.5, 0.75 + (k - 1) * 0.16, 2.5, light, 0, 0, s * (k - 1) * 0.16);
+    rig.on(body).add(GEO.cone(5), fur, s * 2.2, 1.0, -0.6, 0.7, 1.4, 0.7, 0, -0.4, s * -1.9);
+    rig.on(body).add(GEO.cone(5), fur, s * 2.3, 2.6, -0.8, 0.7, 1.3, 0.7, 0, -0.5, s * -1.6);
+  }
+  for (let k = 0; k < 4; k++) rig.on(body).add(GEO.cone(5), light, (k - 1.5) * 0.8, 2.9, 2.2, 0.42, 0.9, 0.42, 0, 2.2, 0);
   return rig.finish();
 }
 
@@ -287,7 +298,9 @@ export class Raccoon extends Enemy {
         this.face(p.pos.x, p.pos.z, 7, dt);
         if (!alive) break;
         const want = this.thrower ? 34 : 7.5;
-        if (this.thrower && dist < 60 && dist > 16 && this.throwCool <= 0) {
+        // An ape up on a roof is out of reach, so everyone starts throwing.
+        const above = p.pos.y > this.pos.y + 7 && (p.onGround || p.state === 'climb');
+        if ((this.thrower || above) && dist < 60 && (above || dist > 16) && this.throwCool <= 0) {
           this.setState('throwWind');
           break;
         }
@@ -472,7 +485,7 @@ export class Pigeon extends Enemy {
         if (this.state === 'spawn' && Math.abs(this.pos.y - ty) < 4) this.setState('hover');
         if (this.state === 'hover' && alive && this.cool <= 0 && this.takeToken()) {
           this.target.set(p.pos.x + p.vel.x * 0.35, 0, p.pos.z + p.vel.z * 0.35);
-          this.target.y = w.groundHeight(this.target.x, this.target.z);
+          this.target.y = g.standHeight ? g.standHeight(this.target.x, this.target.z) : w.groundHeight(this.target.x, this.target.z);
           this.marker = g.fx.marker(this.target.x, this.target.z, 7, 1.4, this.target.y);
           g.audio.play('coo');
           this.setState('aim');
@@ -495,8 +508,8 @@ export class Pigeon extends Enemy {
         const dz = this.target.z - this.pos.z;
         const d = Math.hypot(dx, dy, dz) || 1;
         const step = 78 * dt;
-        if (d <= step || this.pos.y <= ground + 0.3) {
-          this.pos.y = Math.max(ground, this.target.y);
+        if (d <= step || this.pos.y <= Math.max(ground, this.target.y) + 0.3) {
+          this.pos.y = this.restY = Math.max(ground, this.target.y);
           g.fx.dust(this.pos.x, this.pos.y + 0.5, this.pos.z, 7, 2.6);
           g.shake(0.25, this.pos);
           g.audio.play('thud');
@@ -522,6 +535,7 @@ export class Pigeon extends Enemy {
         w.resolveCircle(this.pos, this.radius, this.pos.y);
         if (this.pos.y <= ground) {
           this.pos.y = ground;
+          this.restY = 0;
           this.air = false;
           g.fx.dust(this.pos.x, ground + 0.5, this.pos.z, 5, 2);
           this.stunT = Math.max(this.stunT, 1.2);
@@ -531,8 +545,9 @@ export class Pigeon extends Enemy {
       case 'dazed':
         foldT = 0.85;
         flap = 0;
-        this.pos.y = damp(this.pos.y, ground, 12, dt);
+        this.pos.y = damp(this.pos.y, Math.max(ground, this.restY || 0), 12, dt);
         if (this.t > this.stunT) {
+          this.restY = 0;
           this.cool = rand(2.2, 4.5);
           this.setState('hover');
         }

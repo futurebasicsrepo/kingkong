@@ -60,14 +60,31 @@ export class ChaseCam {
     this.target.z = damp(this.target.z, player.pos.z, 12, dt);
     this.target.y = damp(this.target.y, player.pos.y + 9 + (boss ? 3 : 0), 6, dt);
 
-    const cy = Math.cos(wantPitch);
-    const dx = -Math.sin(this.yaw) * cy;
-    const dy = Math.sin(wantPitch);
-    const dz = -Math.cos(this.yaw) * cy;
-
-    // Shorten the boom if a building is in the way.
-    const t = world.rayBlock(this.target.x, this.target.y, this.target.z, this.target.x + dx * wantDist, this.target.y + dy * wantDist, this.target.z + dz * wantDist);
-    const clear = Math.max(16, t * wantDist - 3);
+    // If a building is in the way, first try swinging the camera up over it;
+    // only then shorten the boom.
+    const sy = Math.sin(this.yaw);
+    const cyaw = Math.cos(this.yaw);
+    const probe = (pitch) => {
+      const c = Math.cos(pitch);
+      return world.rayBlock(this.target.x, this.target.y, this.target.z, this.target.x - sy * c * wantDist, this.target.y + Math.sin(pitch) * wantDist, this.target.z - cyaw * c * wantDist);
+    };
+    let t = probe(wantPitch);
+    let lift = 0;
+    for (const up of [0.28, 0.56, 0.84]) {
+      if (t > 0.8 || wantPitch + up > 1.3) break;
+      const t2 = probe(wantPitch + up);
+      if (t2 > t + 0.08) {
+        t = t2;
+        lift = up;
+      }
+    }
+    this.lift = damp(this.lift || 0, lift, lift > (this.lift || 0) ? 6 : 1.5, dt);
+    const pitch = wantPitch + this.lift;
+    const cy = Math.cos(pitch);
+    const dx = -sy * cy;
+    const dy = Math.sin(pitch);
+    const dz = -cyaw * cy;
+    const clear = Math.max(20, probe(pitch) * wantDist - 3);
     this.curDist = clear < this.curDist ? damp(this.curDist, clear, 14, dt) : damp(this.curDist, clear, 2.5, dt);
 
     cam.position.set(this.target.x + dx * this.curDist, Math.max(2.5, this.target.y + dy * this.curDist), this.target.z + dz * this.curDist);

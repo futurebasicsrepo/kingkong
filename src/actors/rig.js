@@ -15,19 +15,51 @@ export class Rig {
       roughness: opts.roughness ?? 0.88,
       metalness: 0,
     });
-    // A soft rim of light around the outline, the way fur catches the sun.
-    // It also keeps a near-black ape readable against a dark street.
+    // Fur: streaks of lighter and darker hair running down the body, and a
+    // soft rim of light round the outline where fur catches the sun. The rim
+    // also keeps a near-black ape readable against a dark street.
     this.material.onBeforeCompile = (shader) => {
-      shader.fragmentShader = shader.fragmentShader.replace(
-        '#include <emissivemap_fragment>',
-        `#include <emissivemap_fragment>
-        {
-          float rim = pow(1.0 - clamp(dot(normalize(vViewPosition), normal), 0.0, 1.0), 2.6);
-          totalEmissiveRadiance += (diffuseColor.rgb * 1.6 + vec3(0.05, 0.055, 0.07)) * rim * 0.9;
-        }`
-      );
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vRigPos;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRigPos = position;');
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          '#include <common>',
+          `#include <common>
+          varying vec3 vRigPos;
+          float rigHash(vec3 p) {
+            p = fract(p * 0.3183099 + 0.1);
+            p *= 17.0;
+            return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+          }
+          float rigNoise(vec3 x) {
+            vec3 i = floor(x);
+            vec3 f = fract(x);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(
+              mix(mix(rigHash(i), rigHash(i + vec3(1, 0, 0)), f.x), mix(rigHash(i + vec3(0, 1, 0)), rigHash(i + vec3(1, 1, 0)), f.x), f.y),
+              mix(mix(rigHash(i + vec3(0, 0, 1)), rigHash(i + vec3(1, 0, 1)), f.x), mix(rigHash(i + vec3(0, 1, 1)), rigHash(i + vec3(1, 1, 1)), f.x), f.y),
+              f.z);
+          }`
+        )
+        .replace(
+          '#include <color_fragment>',
+          `#include <color_fragment>
+          {
+            float strand = rigNoise(vRigPos * vec3(5.2, 1.3, 5.2)) * 0.62 + rigNoise(vRigPos * vec3(12.0, 3.2, 12.0)) * 0.38;
+            diffuseColor.rgb *= 0.7 + 0.62 * strand;
+          }`
+        )
+        .replace(
+          '#include <emissivemap_fragment>',
+          `#include <emissivemap_fragment>
+          {
+            float rim = pow(1.0 - clamp(dot(normalize(vViewPosition), normal), 0.0, 1.0), 2.4);
+            totalEmissiveRadiance += (diffuseColor.rgb * 1.7 + vec3(0.045, 0.05, 0.065)) * rim;
+          }`
+        );
     };
-    this.material.customProgramCacheKey = () => 'rig-rim';
+    this.material.customProgramCacheKey = () => 'rig-fur';
     this.ball = GEO.sphere(14, 10);
   }
 

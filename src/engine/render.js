@@ -6,8 +6,7 @@ import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { sharedUniforms } from './materials.js';
-import { detail } from './build.js';
+import { sharedUniforms, detail } from './materials.js';
 
 // Everything about how a frame is drawn lives here: renderer, sky, sun,
 // shadows and post-processing. The game only calls the functions on the
@@ -18,6 +17,7 @@ import { detail } from './build.js';
 //   stage.setFocus(x, y, z)  centre the sun's shadow box on a point
 //   stage.render(dt)         draw one frame
 //   stage.resize()           call when the window changes size
+//   stage.setScale(k)        render at a fraction of full resolution (0.4..1)
 
 // Late afternoon over Philadelphia: the sun sits in the south-west, about a
 // third of the way up the sky. North is -z and east is +x.
@@ -212,7 +212,8 @@ export function createStage(canvas, opts = {}) {
   // On 'high' the scene is drawn into a multisampled buffer for the
   // post-processing chain, so the canvas itself needs no antialiasing.
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: !high, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, high ? 2 : 1.5));
+  const basePixelRatio = Math.min(devicePixelRatio, high ? 2 : 1.5);
+  renderer.setPixelRatio(basePixelRatio);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -230,21 +231,25 @@ export function createStage(canvas, opts = {}) {
   const band = makeHorizonBand(haze);
   scene.add(band);
   scene.environment = buildEnvironment(renderer, sunDir, haze);
-  scene.environmentIntensity = 0.8;
-  scene.fog = new THREE.FogExp2(haze, 0.00078);
+  // Clear autumn air: buildings a kilometre off are softened, not lost.
+  scene.fog = new THREE.FogExp2(haze, 0.00046);
   scene.background = haze.clone();
 
-  // The environment map lights physically based surfaces; this fill keeps
-  // simpler materials (effects, markers) from going dark in shadow.
-  const hemi = new THREE.HemisphereLight(0xc4d8ff, 0x6b5f50, 0.42);
+  // Two sources of fill. The environment map lights the physically based
+  // surfaces (everything on 'high', and the characters on both tiers). The
+  // hemisphere light is the sky and the warm bounce off sunlit streets; on
+  // 'low' the city is plain diffuse and gets all of its fill from it, so it
+  // is turned up there and the environment is turned down to match.
+  scene.environmentIntensity = high ? 0.62 : 0.34;
+  const hemi = new THREE.HemisphereLight(high ? 0xe6e2dc : 0xc9d6ea, 0x8a7458, high ? 0.5 : 1.25);
   scene.add(hemi);
 
-  const sun = new THREE.DirectionalLight(0xffe6c4, 3.5);
+  const sun = new THREE.DirectionalLight(0xffdfb8, high ? 3.9 : 3.5);
   sun.castShadow = true;
-  const mapSize = high ? 4096 : 2048;
+  const mapSize = high ? 4096 : 1024;
   sun.shadow.mapSize.set(mapSize, mapSize);
   const sc = sun.shadow.camera;
-  const span = high ? 240 : 170;
+  const span = high ? 240 : 135;
   sc.left = -span;
   sc.right = span;
   sc.top = span;
@@ -252,8 +257,8 @@ export function createStage(canvas, opts = {}) {
   sc.near = 20;
   sc.far = 1100;
   sun.shadow.bias = -0.00035;
-  sun.shadow.normalBias = 0.35;
-  sun.shadow.radius = high ? 2.6 : 1.8;
+  sun.shadow.normalBias = high ? 0.35 : 0.6;
+  sun.shadow.radius = high ? 2.6 : 1.4;
   scene.add(sun, sun.target);
 
   const camera = new THREE.PerspectiveCamera(55, 1, 1, 2800);
@@ -308,6 +313,14 @@ export function createStage(canvas, opts = {}) {
       band.scale.setScalar(camera.far * 0.86);
       if (composer) composer.render(dt);
       else renderer.render(scene, camera);
+    },
+    scale: 1,
+    // Render at a fraction of full resolution (1 = full). The game lowers
+    // this on devices that cannot hold their frame rate.
+    setScale(k) {
+      stage.scale = Math.max(0.4, Math.min(1, k));
+      renderer.setPixelRatio(basePixelRatio * stage.scale);
+      stage.resize();
     },
     resize() {
       const w = canvas.clientWidth || innerWidth;
