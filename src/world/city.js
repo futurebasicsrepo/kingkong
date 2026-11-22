@@ -472,13 +472,18 @@ export class City {
     if (this.trees.length) {
       const trunk = new THREE.InstancedMesh(GEO.trunk(), simpleMaterial({ color: 0x3a2f27, roughness: 0.95 }), this.trees.length);
       const crown = new THREE.InstancedMesh(GEO.crown(), foliageMaterial(), this.trees.length);
-      crown.castShadow = true;
       crown.receiveShadow = true;
-      trunk.frustumCulled = crown.frustumCulled = false;
+      // The crowns are the heaviest thing in the city, so they do not draw
+      // into the shadow map themselves: a twenty-triangle stand-in that is
+      // invisible to the camera casts each tree's shadow instead.
+      const shade = new THREE.InstancedMesh(GEO.ico(0), new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }), this.trees.length);
+      shade.castShadow = true;
+      trunk.frustumCulled = crown.frustumCulled = shade.frustumCulled = false;
       this.meshes.trunk = trunk;
       this.meshes.crown = crown;
+      this.meshes.treeShade = shade;
       for (const t of this.trees) this.writeTree(t);
-      this.group.add(trunk, crown);
+      this.group.add(trunk, crown, shade);
     }
 
     // Parked cars: painted bodywork, and the glass, tyres and lamps.
@@ -556,8 +561,10 @@ export class City {
     _m.compose(_p.set(t.x, 6.9 * s * k, t.z), _q.setFromAxisAngle(UP, t.x * 0.37 + t.z), _s.set(wide, 3.9 * s * k, wide));
     this.meshes.crown.setMatrixAt(t.idx, _m);
     this.meshes.crown.setColorAt(t.idx, _c.set(t.color));
+    this.meshes.treeShade.setMatrixAt(t.idx, _m);
     this.meshes.trunk.instanceMatrix.needsUpdate = true;
     this.meshes.crown.instanceMatrix.needsUpdate = true;
+    this.meshes.treeShade.instanceMatrix.needsUpdate = true;
     if (this.meshes.crown.instanceColor) this.meshes.crown.instanceColor.needsUpdate = true;
   }
 

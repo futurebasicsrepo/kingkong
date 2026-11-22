@@ -750,7 +750,7 @@ export function buildingMaterial(style = 'brick', opts = {}) {
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += bEmit;')
       // Glass should mirror the sky at full strength even though the
       // environment is turned down for ambient light.
-      .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.indirectSpecular *= 1.0 + 0.45 * bGlass;');
+      .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.indirectSpecular *= 1.0 + 1.3 * bGlass;');
   };
   mat.customProgramCacheKey = () => 'facade-' + style;
   return mat;
@@ -1061,9 +1061,12 @@ export function waterMaterial(color = 0x1c4a5c) {
           vec2 d3 = normalize(vec2(0.9, 0.35));
           vec2 d4 = normalize(vec2(-0.35, -1.0));
           wGrad += d1 * cos(dot(p, d1) * 0.55 + t * 0.9) * 0.05;
-          wGrad += d2 * cos(dot(p, d2) * 1.3 + t * 1.5) * 0.045 * keep(fwp * 0.4);
-          wGrad += d3 * cos(dot(p, d3) * 2.9 - t * 2.2) * 0.04 * keep(fwp * 0.9);
-          wGrad += d4 * cos(dot(p, d4) * 5.3 + t * 3.1) * 0.03 * keep(fwp * 1.7);
+          // The short waves are bent by a slow noise so they never line up
+          // into a grid, and they fade out before they are a pixel wide.
+          float bend = vnoise(p * 0.07 + t * 0.05) * 6.0;
+          wGrad += d2 * cos(dot(p, d2) * 1.3 + t * 1.5 + bend) * 0.045 * keep(fwp * 1.1);
+          wGrad += d3 * cos(dot(p, d3) * 2.9 - t * 2.2 + bend * 1.7) * 0.04 * keep(fwp * 2.4);
+          wGrad += d4 * cos(dot(p, d4) * 5.3 + t * 3.1 - bend * 2.3) * 0.03 * keep(fwp * 4.5);
           float e = 0.35;
           vec2 q = p * 0.9 + vec2(t * 0.25, t * 0.6);
           float n0 = vnoise(q);
@@ -1076,7 +1079,7 @@ export function waterMaterial(color = 0x1c4a5c) {
         '#include <normal_fragment_maps>',
         '#include <normal_fragment_maps>\nnormal = normalize((viewMatrix * vec4(normalize(vec3(-wGrad.x, 1.0, -wGrad.y)), 0.0)).xyz);'
       )
-      .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.indirectSpecular *= 1.35;');
+      .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.indirectSpecular *= 1.7;');
   };
   mat.customProgramCacheKey = () => 'water';
   return mat;
