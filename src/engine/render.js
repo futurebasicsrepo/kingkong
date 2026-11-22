@@ -145,6 +145,39 @@ function horizonColour(renderer, sunDir) {
   return out;
 }
 
+// A band of haze standing on the horizon all the way round, drawn behind the
+// city. Whatever the sky does down there, the far edge of the land always
+// meets the same colour the fog fades to.
+function makeHorizonBand(haze) {
+  const geo = new THREE.CylinderGeometry(1, 1, 1.4, 48, 1, true);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: haze } },
+    vertexShader: `
+      varying float vRise;
+      void main() {
+        vRise = position.y;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      uniform vec3 uColor;
+      varying float vRise;
+      void main() {
+        float a = vRise < 0.0 ? 1.0 : exp(-vRise * 9.0);
+        gl_FragColor = vec4(uColor, a);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+    side: THREE.BackSide,
+    transparent: true,
+    depthWrite: false,
+    fog: false,
+  });
+  const band = new THREE.Mesh(geo, mat);
+  band.frustumCulled = false;
+  band.renderOrder = -5;
+  return band;
+}
+
 // Final touch in display space: a gentle contrast curve, a little warmth and
 // a soft vignette, the way a camera would see it.
 const GradeShader = {
@@ -194,6 +227,8 @@ export function createStage(canvas, opts = {}) {
   const sky = makeSky(sunDir, true);
   sky.material.uniforms.skyHaze.value.set(haze.r, haze.g, haze.b, 1);
   scene.add(sky);
+  const band = makeHorizonBand(haze);
+  scene.add(band);
   scene.environment = buildEnvironment(renderer, sunDir, haze);
   scene.environmentIntensity = 0.8;
   scene.fog = new THREE.FogExp2(haze, 0.00078);
@@ -269,6 +304,8 @@ export function createStage(canvas, opts = {}) {
       sky.material.uniforms.time.value = stage.time;
       sky.position.copy(camera.position);
       sky.scale.setScalar(camera.far * 1.1);
+      band.position.copy(camera.position);
+      band.scale.setScalar(camera.far * 0.86);
       if (composer) composer.render(dt);
       else renderer.render(scene, camera);
     },

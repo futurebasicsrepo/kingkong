@@ -120,7 +120,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .keys b { color: var(--paper); }
 
 .tour { text-align: center; width: min(980px, 100%); }
-.tour h2 { font-size: clamp(40px, 8vw, 84px); margin-bottom: 18px !important; }
+.tour h2 { font-size: clamp(34px, min(8vw, 14vh), 84px); margin-bottom: 14px !important; }
 .stops { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 #screen .stop { margin: 0; padding: 14px 12px 12px; text-align: left; border-radius: 8px; background: rgba(23, 23, 26, 0.86); border: 2px solid rgba(243, 238, 228, 0.14); width: 100%; }
 .stop i { font: 800 13px var(--body); font-style: normal; color: var(--muted); letter-spacing: 0.1em; }
