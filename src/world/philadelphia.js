@@ -129,11 +129,14 @@ export function buildPhiladelphia(scene) {
   for (const x of [-500.6, -429.4, 412.6, 639.4]) d.box(1.2, 6.2, 3200, x, -6, 0, 0x8d8a83);
 
   // West bank, river trail, waterfront.
-  city.addSlab(-1600, -1600, -500, 1600, 0x8d9084, 0.2);
-  city.addSlab(-430, -1600, -399, 1600, COL.grass, 0.3);
-  city.addSlab(399, -1600, 412, 1600, COL.sidewalk, 0.25);
+  city.addSlab(-3200, -3200, -500, 3200, 0x8d9084, 0.2);
+  city.addSlab(-430, -3200, -399, 3200, COL.grass, 0.3);
+  city.addSlab(399, -3200, 412, 3200, COL.sidewalk, 0.25);
+  // Beyond the last streets the land is a pale blur of suburbs, not bare road.
+  city.addSlab(-399, -3200, 399, -640, 0x86857c, 0.2);
+  city.addSlab(-399, 640, 399, 3200, 0x86857c, 0.2);
   // Fairmount Park around the museum.
-  city.addSlab(-430, -1600, -243, -243, COL.grass, 0.31);
+  city.addSlab(-430, -3200, -243, -243, COL.grass, 0.31);
   // Penn Square and Dilworth Park, one sheet of stone.
   city.addSlab(-147, -69, 69, 69, COL.plaza, 0.3);
 

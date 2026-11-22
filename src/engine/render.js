@@ -240,8 +240,8 @@ export function createStage(canvas, opts = {}) {
   // hemisphere light is the sky and the warm bounce off sunlit streets; on
   // 'low' the city is plain diffuse and gets all of its fill from it, so it
   // is turned up there and the environment is turned down to match.
-  scene.environmentIntensity = high ? 0.62 : 0.34;
-  const hemi = new THREE.HemisphereLight(high ? 0xe6e2dc : 0xc9d6ea, 0x8a7458, high ? 0.5 : 1.25);
+  scene.environmentIntensity = high ? 0.5 : 0.34;
+  const hemi = new THREE.HemisphereLight(high ? 0xf0e6d8 : 0xcfd8e6, 0x8a7458, high ? 0.72 : 1.25);
   scene.add(hemi);
 
   const sun = new THREE.DirectionalLight(0xffdfb8, high ? 3.9 : 3.5);
