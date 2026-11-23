@@ -1,17 +1,19 @@
 # Silverback: World Tour
 
-A browser brawler, built phone-first for players aged about 8 to 16. One very large ape goes on tour through eight cities and batters the animals that run each one. The first stop, Philadelphia, is playable.
+A browser brawler, built phone-first for players aged about 8 to 16. One very large ape goes on tour through eight cities and batters the animals that run each one. The first two stops, Philadelphia and New York City, are playable.
 
 There are five apes to play as: **Trevor, Lukas, Sloan, Calvin and Zo**. They play the same and differ in fur, scarf and gear. All characters are original.
 
 ```
 index.html            the game page
 src/main.js           boots the game
+src/stops.js          the tour: each city's missions, boss, hidden golden things and camera spots
 src/game.js           mission flow, combat rules, scoring, the frame loop
-src/actors/           the ape, raccoons, pigeons, the eagle boss (models, animation, behaviour)
+src/actors/           the apes and every animal: raccoons, pigeons, rats, the gator, the eagle and the bull
 src/world/city.js     what every city shares: instanced buildings, collision, destruction
 src/world/life.js     what moves on its own: traffic, fountains, flags, steam, leaves, birds, murals, signs
 src/world/philadelphia.js   the Philadelphia map and landmarks
+src/world/newyork.js  the New York map and landmarks
 src/engine/           renderer and sky, materials, effects, camera, input, synthesised sound
 src/ui/hud.js         HUD, minimap, touch controls, title / tour / pause / results screens
 server.js             zero-dependency static server for the built game
@@ -32,7 +34,9 @@ Everything is generated in code: no model, texture or audio files.
 | Roar (when the orange bar is full: stuns, then double damage) | L, R or Q | ROAR | B |
 | Pause / mute | Esc or P / M | II button | Start |
 
-Philadelphia runs: break out of the zoo, clear the raccoons off Eakins Oval below the Art Museum steps, swat the pigeons at Logan Circle, take Independence Mall back from Big Bandit (the king of the Trash Pandas), then fight the eagle at City Hall.
+**Philadelphia** runs: break out of the zoo, clear the raccoons off Eakins Oval below the Art Museum steps, swat the pigeons at Logan Circle, take Independence Mall back from Big Bandit (the king of the Trash Pandas), then fight Baldwin the eagle at City Hall.
+
+**New York City** runs: punch out of the shipping container on a Hudson pier, take Times Square back from the pizza rats and Gator (the sewer alligator), climb to the top of the Empire State Building, clear Wall Street, then fight Bullion the Wall Street Bull in Battery Park. He charges along a red strip (step aside, or slam the ground while he paws it to knock him over), hooks with his horns if crowded, leaps onto a red ring, and tosses gold coins; he is open to a beating while his horns are stuck in a wall or he is out of breath.
 
 Three difficulty levels, chosen on the tour screen or in the pause menu: **Easy**, **Normal** and **Hard**. They change how hard and how often the animals hit, how many attack at once, how tough they and the boss are, and how generous the pretzels are. On Hard, an animal that has started a swing cannot be jabbed out of it.
 
@@ -42,7 +46,7 @@ Other things to do:
 - **Rooftops.** Roofs can be stood on and run across. A dive from high up makes a much bigger crater.
 - **Wreck things.** Buildings, trees, street lamps and parked cars can all be flattened; landmarks cannot. A car kicked while an animal is in front of the ape flies at it.
 - **Pretzels** heal. Clearing an objective heals a little too.
-- **Golden pretzels.** Ten are hidden round the city, some on roofs and one on top of the tallest tower. They show as ringed gold dots on the map.
+- **Hidden gold.** Ten golden pretzels in Philadelphia and ten golden apples in New York, some on roofs and towers. They show as ringed gold dots on the map. Pretzels heal in Philadelphia, pizza slices in New York.
 - There is a secret on Independence Mall.
 
 The city moves: traffic runs on Broad, Market and the main cross streets (and can be kicked), fountains spray, Parkway flags wave, steam rises from street vents, leaves drift in the parks, pigeons on the plazas scatter when the ape comes near, and beacons blink on the tallest towers. Murals and corner shops dress the row-house streets, and Boathouse Row sits upriver of the Art Museum with its outlines lit.
@@ -52,7 +56,7 @@ The city moves: traffic runs on Broad, Market and the main cross streets (and ca
 | Stop | City | Rival |
 | --- | --- | --- |
 | 1 | Philadelphia (playable) | Baldwin, the Bald Eagle of Broad Street |
-| 2 | New York City | Bullion, the Wall Street Bull |
+| 2 | New York City (playable) | Bullion, the Wall Street Bull |
 | 3 | Santa Clara | Nugget, the Gold Rush Grizzly |
 | 4 | San Francisco | Barker, the Sea Lion of the Bay |
 | 5 | London | Regent, the Lion of Trafalgar |
@@ -60,7 +64,9 @@ The city moves: traffic runs on Broad, Market and the main cross streets (and ca
 | 7 | Paris | Chanticleer, the Rooster of Paris |
 | 8 | Shanghai | Huangpu, the Tiger of the Bund |
 
-Each later city needs a map file like `src/world/philadelphia.js`, its animals, and its entry opened in `TOUR` in `src/game.js`.
+The tour screen shows a tick on each stop cleared on this device; every built stop can be played in any order.
+
+Each later city needs a map file like `src/world/newyork.js`, its animals, and a full entry in `STOPS` in `src/stops.js` (missions, boss, hidden gold, camera spots, minimap area).
 
 ## Phones
 
@@ -87,9 +93,10 @@ npm test
 
 Handy URLs while developing:
 
-- `/?autoplay=1` skips the title. `&start=oval`, `&start=logan`, `&start=mall` or `&start=boss` jumps to that checkpoint. `&level=easy` or `&level=hard` sets the difficulty. `&view=near`, `mid` or `far` sets the camera distance. `&god=1` refills health when hit. `&ape=zo` picks an ape. `&gov=0` turns the frame-rate governor off.
+- `/?city=nyc` or `/?city=philly` picks the city (the last one played is remembered).
+- `/?autoplay=1` skips the title. `&start=oval`, `&start=logan`, `&start=mall` or `&start=boss` jumps to that checkpoint in Philadelphia; `&start=times`, `empire`, `wall` or `boss` in New York. `&level=easy` or `&level=hard` sets the difficulty. `&view=near`, `mid` or `far` sets the camera distance. `&god=1` refills health when hit. `&ape=zo` picks an ape. `&gov=0` turns the frame-rate governor off.
 - `/?quality=high` or `/?quality=low` forces the graphics tier (phones default to low; the pause menu has a toggle).
-- `/city.html?cam=x,y,z&look=x,y,z` shows the city alone. `/view.html?who=ape&v=sloan&pose=run` shows a character (`who`: ape, raccoon, thrower, pigeon, eagle; `v`: which ape).
+- `/city.html?cam=x,y,z&look=x,y,z` shows the city alone (`&city=nyc` for New York). `/view.html?who=ape&v=sloan&pose=run` shows a character (`who`: ape, raccoon, thrower, pigeon, eagle, rat, gator, bull; `v`: which ape).
 
 ## Deploying
 

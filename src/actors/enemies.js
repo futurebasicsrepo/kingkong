@@ -268,21 +268,31 @@ export class Enemy {
 
 // ---- raccoons: the Trash Pandas -------------------------------------------
 
+// The raccoon's way of fighting is shared by other ground animals; opts swaps
+// in their model and numbers (see makeRat and makeGator below).
 export class Raccoon extends Enemy {
-  constructor(game, x, z, thrower = false, chief = false) {
+  constructor(game, x, z, thrower = false, chief = false, opts = {}) {
     super(game, x, z, {
-      kind: chief ? 'chief' : thrower ? 'thrower' : 'raccoon',
-      build: () => buildRaccoon(thrower, chief),
-      hp: chief ? 190 : thrower ? 32 : 44,
-      radius: chief ? 5 : 3,
-      height: chief ? 13.5 : 8,
+      kind: opts.kind || (chief ? 'chief' : thrower ? 'thrower' : 'raccoon'),
+      build: opts.build || (() => buildRaccoon(thrower, chief)),
+      hp: opts.hp ?? (chief ? 190 : thrower ? 32 : 44),
+      radius: opts.radius ?? (chief ? 5 : 3),
+      height: opts.height ?? (chief ? 13.5 : 8),
     });
     // The chief is the same animal, most of twice the size, and he does not
     // flinch at a jab.
     this.chief = chief;
-    this.size = chief ? 1.7 : 1;
-    this.name = 'BIG BANDIT';
-    this.title = 'King of the Trash Pandas';
+    this.size = opts.size ?? (chief ? 1.7 : 1);
+    this.reach = opts.reach ?? this.size;
+    this.name = opts.name || 'BIG BANDIT';
+    this.title = opts.title || 'King of the Trash Pandas';
+    this.speed = opts.speed ?? (chief ? 13 : 15);
+    this.bite = opts.bite ?? (chief ? 13 : 8);
+    this.windT = opts.windup ?? 0.5;
+    // A swarm attacks without waiting its turn, but each one hits softly.
+    this.swarm = !!opts.swarm;
+    this.noThrow = !!opts.noThrow;
+    if (this.swarm) this.cool = rand(0.6, 2.4);
     this.poundCool = rand(2, 3.5);
     this.marker = null;
     this.thrower = thrower;
@@ -326,8 +336,8 @@ export class Raccoon extends Enemy {
     const dist = Math.hypot(dx, dz) || 1;
     const nx = dx / dist;
     const nz = dz / dist;
-    let speed = this.chief ? 13 : 15;
-    const k = this.size;
+    let speed = this.speed;
+    const k = this.reach;
     this.poundCool -= dt;
     let armT = 0;
     let leanT = 0;
@@ -354,7 +364,7 @@ export class Raccoon extends Enemy {
         }
         // An ape up on a roof is out of reach, so everyone starts throwing.
         const above = p.pos.y > this.pos.y + 7 && (p.onGround || p.state === 'climb');
-        if ((this.thrower || above) && dist < 60 && (above || dist > 16) && this.throwCool <= 0) {
+        if ((this.thrower || (above && !this.noThrow)) && dist < 60 && (above || dist > 16) && this.throwCool <= 0) {
           this.setState('throwWind');
           break;
         }
@@ -364,7 +374,7 @@ export class Raccoon extends Enemy {
         } else if (this.thrower && dist < want - 8) {
           this.wx = -nx;
           this.wz = -nz;
-        } else if (!this.thrower && this.cool <= 0 && this.takeToken()) {
+        } else if (!this.thrower && this.cool <= 0 && (this.swarm || this.takeToken())) {
           this.setState('windup');
         } else {
           // Circle while waiting for a turn.
@@ -380,7 +390,7 @@ export class Raccoon extends Enemy {
         armT = -2.7;
         leanT = -0.3;
         this.glow = 0.5 + Math.sin(this.t * 40) * 0.5;
-        if (this.t > 0.5) {
+        if (this.t > this.windT) {
           this.setState('attack');
           this.struck = false;
           this.vel.x = Math.sin(this.yaw) * 34;
@@ -399,12 +409,12 @@ export class Raccoon extends Enemy {
           const hz = this.pos.z + Math.cos(this.yaw) * 4.5 * k;
           if (Math.hypot(p.pos.x - hx, p.pos.z - hz) < 7.2 * k && p.pos.y < this.pos.y + 7 * k) {
             this.struck = true;
-            p.takeDamage(this.chief ? 13 : 8, this.pos.x, this.pos.z, this.chief ? 34 : 20);
+            p.takeDamage(this.bite, this.pos.x, this.pos.z, this.chief ? 34 : 20);
           }
         }
         if (this.t > 0.55) {
           this.releaseToken();
-          this.cool = rand(0.8, 1.7) * this.pace;
+          this.cool = (this.swarm ? rand(1.8, 3.2) : rand(0.8, 1.7)) * this.pace;
           this.setState('chase');
         }
         break;
@@ -643,4 +653,112 @@ export class Pigeon extends Enemy {
     j.legL.rotation.x = this.state === 'dazed' ? 0 : 0.9;
     j.legR.rotation.x = this.state === 'dazed' ? 0 : 0.9;
   }
+}
+
+// ---- New York: rats and the sewer gator ------------------------------------
+
+function buildRat(pizza) {
+  const fur = 0x6b6058;
+  const fur2 = 0x564c45;
+  const belly = 0xa89b8c;
+  const pink = 0xe0a2a0;
+  const dark = 0x161414;
+  const rig = new Rig();
+  // On all fours: the body runs along z, nose forward.
+  const body = rig.joint('body', null, 0, 2.3, 0);
+  rig.blob(body, fur, 0, 0.3, -0.2, 1.7, 1.45, 2.7);
+  rig.blob(body, fur2, 0, 0.5, -1.6, 1.8, 1.5, 1.7);
+  rig.blob(body, belly, 0, -0.5, 0.4, 1.3, 0.9, 2.0);
+  for (let k = 0; k < 4; k++) rig.on(body).add(GEO.cone(4), fur2, (k % 2 ? 0.5 : -0.5), 1.6, -1.2 + k * 0.7, 0.32, 0.8, 0.32, 0, -0.9, 0);
+  const head = rig.joint('head', body, 0, 0.6, 2.3);
+  rig.blob(head, fur, 0, 0.1, 0.5, 1.05, 0.95, 1.3);
+  rig.on(head).add(GEO.cone(8), fur, 0, -0.05, 1.3, 0.72, 1.6, 0.66, 0, Math.PI / 2, 0);
+  rig.blob(head, pink, 0, 0.0, 2.95, 0.28, 0.24, 0.24);
+  rig.on(head).box(0.42, 0.42, 0.14, 0, -0.55, 2.38, 0xf4eedb);
+  for (const s of [-1, 1]) {
+    rig.blob(head, fur2, s * 0.85, 1.05, 0.15, 0.62, 0.66, 0.2);
+    rig.blob(head, pink, s * 0.86, 1.05, 0.23, 0.44, 0.48, 0.14);
+    rig.blob(head, dark, s * 0.55, 0.42, 1.2, 0.2, 0.22, 0.18);
+    rig.blob(head, 0xffffff, s * 0.5, 0.5, 1.34, 0.06, 0.06, 0.05);
+    for (let k = 0; k < 3; k++) rig.on(head).box(1.5, 0.04, 0.04, s * 0.75, -0.05 + (k - 1) * 0.12, 2.55, 0xdcd6cc, 0, 0, s * (k - 1) * 0.15);
+  }
+  if (pizza) {
+    // Carrying a slice, of course.
+    const tri = new THREE.Shape();
+    tri.moveTo(0, -1.3);
+    tri.lineTo(1.1, 1.1);
+    tri.lineTo(-1.1, 1.1);
+    tri.closePath();
+    rig.on(head).add(new THREE.ExtrudeGeometry(tri, { depth: 0.22, bevelEnabled: false }), 0xf2b640, 0, -0.55, 3.3, 1, 1, 1, 0, Math.PI / 2, 0);
+    rig.on(head).add(GEO.cyl(8), 0xb8702a, 0, -0.5, 4.4, 1.15, 0.4, 0.3, 0, Math.PI / 2, Math.PI / 2);
+    for (const [px, pz] of [[0.3, 3.0], [-0.35, 3.6], [0.1, 3.9]]) rig.on(head).cyl(0.22, 0.08, px, -0.36, pz, 0xb2301e, 8);
+  }
+  for (const [side, s] of [['L', 1], ['R', -1]]) {
+    const arm = rig.joint('arm' + side, body, s * 0.95, -0.5, 1.5);
+    rig.blob(arm, fur, 0, -0.5, 0, 0.42, 0.75, 0.45);
+    rig.blob(arm, pink, 0, -1.25, 0.35, 0.36, 0.2, 0.55);
+    const leg = rig.joint('leg' + side, body, s * 1.05, -0.2, -1.6);
+    rig.blob(leg, fur2, 0, -0.3, 0, 0.75, 0.95, 0.95);
+    rig.blob(leg, pink, 0, -1.45, 0.55, 0.38, 0.22, 0.95);
+  }
+  const tail = rig.joint('tail', body, 0, 0.1, -3.4);
+  for (let k = 0; k < 9; k++) rig.blob(tail, pink, 0, k * 0.16, -0.7 * k, 0.32 - k * 0.025, 0.32 - k * 0.025, 0.55);
+  return rig.finish();
+}
+
+function buildGator() {
+  const hide = 0x3f5a35;
+  const hide2 = 0x34492c;
+  const belly = 0xc9c08a;
+  const tooth = 0xf2efe0;
+  const dark = 0x141712;
+  const rig = new Rig({ roughness: 0.7 });
+  const body = rig.joint('body', null, 0, 2.6, 0);
+  rig.blob(body, hide, 0, 0, 0, 3.0, 1.7, 4.8);
+  rig.blob(body, belly, 0, -0.75, 0.2, 2.6, 1.0, 4.3);
+  rig.blob(body, hide2, 0, 0.1, 3.4, 2.4, 1.5, 2.4);
+  // The armoured back: rows of bony scutes.
+  for (let k = 0; k < 8; k++) for (const s of [-1, 0, 1]) rig.on(body).add(GEO.cone(4), hide2, s * 1.1, 1.35 - Math.abs(s) * 0.25, -3.6 + k * 0.95, 0.34, 0.7, 0.34, Math.PI / 4, 0, 0);
+  const head = rig.joint('head', body, 0, 0.3, 5.0);
+  rig.blob(head, hide, 0, 0.2, 0.8, 2.0, 1.1, 1.9);
+  rig.blob(head, hide, 0, -0.15, 3.6, 1.45, 0.62, 3.4);
+  rig.blob(head, belly, 0, -0.62, 3.2, 1.25, 0.3, 3.0);
+  rig.blob(head, hide2, 0, 0.32, 6.6, 0.6, 0.35, 0.5);
+  for (const s of [-1, 1]) {
+    rig.blob(head, hide2, s * 0.9, 1.15, 1.2, 0.62, 0.55, 0.7);
+    rig.blob(head, 0xe8c341, s * 0.98, 1.3, 1.45, 0.42, 0.38, 0.4);
+    rig.blob(head, dark, s * 1.0, 1.32, 1.72, 0.12, 0.32, 0.14);
+    for (let k = 0; k < 6; k++) rig.on(head).add(GEO.cone(4), tooth, s * 1.25, -0.35, 1.4 + k * 0.85, 0.18, 0.55, 0.18, 0, Math.PI, 0);
+  }
+  for (const [side, s] of [['L', 1], ['R', -1]]) {
+    const arm = rig.joint('arm' + side, body, s * 2.5, -0.6, 2.7);
+    rig.blob(arm, hide, s * 0.5, -0.6, 0, 0.9, 1.1, 0.95);
+    rig.blob(arm, hide2, s * 0.8, -1.7, 0.5, 0.85, 0.35, 1.2);
+    const leg = rig.joint('leg' + side, body, s * 2.6, -0.5, -2.6);
+    rig.blob(leg, hide, s * 0.5, -0.5, 0, 1.15, 1.3, 1.3);
+    rig.blob(leg, hide2, s * 0.85, -1.8, 0.6, 0.95, 0.38, 1.4);
+  }
+  const tail = rig.joint('tail', body, 0, 0.1, -4.4);
+  for (let k = 0; k < 8; k++) {
+    rig.blob(tail, k % 2 ? hide2 : hide, 0, k * 0.08, -1.05 * k, 1.9 - k * 0.21, 1.3 - k * 0.12, 1.0);
+    rig.on(tail).add(GEO.cone(4), hide2, 0, 1.2 - k * 0.12, -1.05 * k, 0.3, 0.65 - k * 0.04, 0.3, Math.PI / 4, 0, 0);
+  }
+  return rig.finish();
+}
+
+// Subway rats: small, quick and many. They nip rather than maul.
+export function makeRat(game, x, z) {
+  return new Raccoon(game, x, z, false, false, {
+    kind: 'rat', build: () => buildRat(Math.random() < 0.45), hp: 16, radius: 2.2, height: 4.2,
+    size: 0.85, reach: 0.75, speed: 21, bite: 4, windup: 0.32, swarm: true, noThrow: true,
+  });
+}
+
+// The sewer gator: Times Square's mini-boss. Shrugs off jabs; when he rears
+// up, a red ring marks where he lands.
+export function makeGator(game, x, z) {
+  return new Raccoon(game, x, z, false, true, {
+    kind: 'gator', build: buildGator, hp: 230, radius: 5.5, height: 6.5,
+    size: 1.15, reach: 1.6, speed: 12, bite: 15, windup: 0.6, name: 'GATOR', title: 'King of the Sewers',
+  });
 }

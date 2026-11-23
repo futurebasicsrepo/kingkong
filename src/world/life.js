@@ -17,6 +17,40 @@ const UP = new THREE.Vector3(0, 1, 0);
 const HIDE = new THREE.Matrix4().makeScale(0, 0, 0);
 const TURN = 2.7; // radius of a U-turn, and how far a lane sits from the centre line
 
+// Times Square screens. Made-up and generic on purpose: no real brands.
+export const BILLBOARDS = [
+  { word: 'SHOWTIME', sub: 'TONIGHT 8PM', a: '#ff2d6f', b: '#6a11cb', fg: '#ffffff' },
+  { word: 'NEWS', sub: 'LIVE  24/7', a: '#0a1f44', b: '#1e6fd9', fg: '#ffd23a' },
+  { word: 'SALE', sub: 'EVERYTHING MUST GO', a: '#ffd23a', b: '#ff7a00', fg: '#141414' },
+  { word: 'PIZZA', sub: 'BY THE SLICE', a: '#d7261e', b: '#ff9a1f', fg: '#fff6e0' },
+  { word: 'THE MUSICAL', sub: 'NOW PLAYING', a: '#141414', b: '#3a0d4a', fg: '#f6c945' },
+  { word: 'SODA POP', sub: 'ICE COLD', a: '#00b3a4', b: '#0057b8', fg: '#ffffff' },
+  { word: 'BIG APPLE', sub: 'WELCOME', a: '#2e9d3a', b: '#0c5a2a', fg: '#ffffff' },
+  { word: 'GO!', sub: 'RUN THE CITY', a: '#ff4a1c', b: '#ffb03a', fg: '#141414' },
+];
+
+function paintBillboard(g, x, y, bb) {
+  const grad = g.createLinearGradient(x, y, x + 512, y + 256);
+  grad.addColorStop(0, bb.a);
+  grad.addColorStop(1, bb.b);
+  g.fillStyle = grad;
+  g.fillRect(x, y, 512, 256);
+  g.globalAlpha = 0.18;
+  g.fillStyle = '#ffffff';
+  for (let k = 0; k < 6; k++) g.fillRect(x + k * 96 - 40, y, 30, 256);
+  g.globalAlpha = 1;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = bb.fg;
+  g.font = `900 ${bb.word.length > 8 ? 78 : 104}px Impact, "Arial Black", sans-serif`;
+  g.fillText(bb.word, x + 256, y + 110);
+  g.font = '700 34px "Arial Black", Arial, sans-serif';
+  g.fillText(bb.sub, x + 256, y + 202);
+  g.strokeStyle = 'rgba(0,0,0,0.6)';
+  g.lineWidth = 10;
+  g.strokeRect(x + 5, y + 5, 502, 246);
+}
+
 // Words a corner shop can carry. Generic on purpose: no real businesses.
 export const SHOP_WORDS = ['PIZZA', 'STEAKS', 'DELI', 'HOAGIES', 'PRETZELS', 'WATER ICE', 'BAKERY', 'MARKET'];
 const SHOP_INKS = [['#b3261c', '#f6efdc'], ['#f6efdc', '#1d1d1f'], ['#1f4a36', '#f6efdc'], ['#f2c230', '#1d1d1f'], ['#24588f', '#f6efdc'], ['#f6efdc', '#b3261c'], ['#5b3a24', '#f2e2b8'], ['#1d1d1f', '#f2c230']];
@@ -39,6 +73,7 @@ export class CityLife {
     this.birds = [];
     this.murals = [];
     this.signs = [];
+    this.billboards = [];
     this.meshes = {};
     this.stomp = { x: 0, z: 0, t: -99 };
     this.time = 0;
@@ -137,9 +172,15 @@ export class CityLife {
     this.murals.push({ b, face, u, y, w, h, kind, hue });
   }
 
-  // A shop sign: one of SHOP_WORDS, on a wall like a mural.
+  // A shop sign with a short word on it, on a wall like a mural.
   addSign(b, face, u, y, w, h, word) {
     this.signs.push({ b, face, u, y, w, h, word });
+  }
+
+  // A glowing advertising screen (Times Square). kind picks one of the
+  // generic designs in BILLBOARDS; it goes dark with its building.
+  addBillboard(b, face, u, y, w, h, kind) {
+    this.billboards.push({ b, face, u, y, w, h, kind: kind % BILLBOARDS.length });
   }
 
   // ---- building ----------------------------------------------------------
@@ -403,14 +444,16 @@ export class CityLife {
 
     // Shop signs: all the words on one sheet, one row each.
     if (this.signs.length && typeof document !== 'undefined') {
-      const rows = SHOP_WORDS.length;
+      // One row per word actually used, so any city can bring its own words.
+      const words = [...new Set(this.signs.map((o) => o.word))];
+      const rows = words.length;
       const cv = document.createElement('canvas');
       cv.width = 512;
       cv.height = rows * 96;
       const g = cv.getContext('2d');
       g.textAlign = 'center';
       g.textBaseline = 'middle';
-      SHOP_WORDS.forEach((word, r) => {
+      words.forEach((word, r) => {
         const [bg, fg] = SHOP_INKS[r % SHOP_INKS.length];
         g.fillStyle = bg;
         g.fillRect(0, r * 96, 512, 96);
@@ -437,7 +480,7 @@ export class CityLife {
       const mesh = new THREE.InstancedMesh(geo, mat, n);
       mesh.frustumCulled = false;
       this.signs.forEach((o, i) => {
-        row[i] = Math.max(0, SHOP_WORDS.indexOf(o.word));
+        row[i] = Math.max(0, words.indexOf(o.word));
         mesh.setMatrixAt(i, this.wallMatrix(o, 0.22));
         this.onFall(o.b, () => {
           mesh.setMatrixAt(i, HIDE);
@@ -445,6 +488,40 @@ export class CityLife {
         });
       });
       geo.setAttribute('aRow', new THREE.InstancedBufferAttribute(row, 1));
+      group.add(mesh);
+    }
+
+    // Billboards: eight generic designs on one sheet, drawn unlit so they glow.
+    if (this.billboards.length && typeof document !== 'undefined') {
+      const cv = document.createElement('canvas');
+      cv.width = 1024;
+      cv.height = 1024;
+      const g = cv.getContext('2d');
+      BILLBOARDS.forEach((bb, k) => paintBillboard(g, (k % 2) * 512, Math.floor(k / 2) * 256, bb));
+      const tex = new THREE.CanvasTexture(cv);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 4;
+      const n = this.billboards.length;
+      const geo = new THREE.PlaneGeometry(1, 1);
+      const tile = new Float32Array(n);
+      const mat = new THREE.MeshBasicMaterial({ map: tex });
+      mat.onBeforeCompile = (shader) => {
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', '#include <common>\nattribute float aTile;')
+          .replace('#include <uv_vertex>', `#include <uv_vertex>\nvMapUv = vec2((uv.x + mod(aTile, 2.0)) / 2.0, (uv.y + 3.0 - floor(aTile / 2.0)) / 4.0);`);
+      };
+      mat.customProgramCacheKey = () => 'city-billboard';
+      const mesh = new THREE.InstancedMesh(geo, mat, n);
+      mesh.frustumCulled = false;
+      this.billboards.forEach((o, i) => {
+        tile[i] = o.kind;
+        mesh.setMatrixAt(i, this.wallMatrix(o, 0.3));
+        this.onFall(o.b, () => {
+          mesh.setMatrixAt(i, HIDE);
+          mesh.instanceMatrix.needsUpdate = true;
+        });
+      });
+      geo.setAttribute('aTile', new THREE.InstancedBufferAttribute(tile, 1));
       group.add(mesh);
     }
     this.built = true;

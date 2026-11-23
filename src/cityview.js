@@ -1,10 +1,11 @@
 // Development viewer for the city on its own: /city.html?cam=x,y,z&look=x,y,z&quality=high
 import { createStage } from './engine/render.js';
 import { buildPhiladelphia } from './world/philadelphia.js';
+import { buildNewYork } from './world/newyork.js';
 
 const q = new URLSearchParams(location.search);
 const stage = createStage(document.getElementById('game'), { quality: q.get('quality') || undefined });
-const city = buildPhiladelphia(stage.scene);
+const city = (q.get('city') === 'nyc' ? buildNewYork : buildPhiladelphia)(stage.scene);
 const cam = (q.get('cam') || '-250,160,260').split(',').map(Number);
 const look = (q.get('look') || '-100,0,-60').split(',').map(Number);
 stage.camera.position.set(cam[0], cam[1], cam[2]);

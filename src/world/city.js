@@ -47,6 +47,7 @@ export class City {
     this.dashes = [];
 
     this.waterZones = [];
+    this.ponds = [];
     this.bridges = [];
     this.heightZones = [];
     this.mapFeatures = [];
@@ -69,6 +70,9 @@ export class City {
   }
   addBeacon(...a) {
     this.life.addBeacon(...a);
+  }
+  addBillboard(...a) {
+    this.life.addBillboard(...a);
   }
   addFlag(...a) {
     this.life.addFlag(...a);
@@ -240,8 +244,15 @@ export class City {
     return groundMaterial(0, color, grid);
   }
 
-  addWater(x0, x1) {
-    this.waterZones.push({ x0, x1 });
+  // A band of river or harbour. Without z limits it runs the whole length
+  // of the map; with them it stops (a harbour south of an island).
+  addWater(x0, x1, z0 = -Infinity, z1 = Infinity) {
+    this.waterZones.push({ x0, x1, z0, z1 });
+  }
+
+  // A round pond or lake the ape can wade into.
+  addPond(x, z, r) {
+    this.ponds.push({ x, z, r });
   }
 
   addBridge(x0, x1, z0, z1) {
@@ -252,8 +263,12 @@ export class City {
   waterAmount(x, z) {
     let amt = 0;
     for (const w of this.waterZones) {
-      if (x <= w.x0 || x >= w.x1) continue;
-      amt = Math.max(amt, clamp01(Math.min(x - w.x0, w.x1 - x) / 6));
+      if (x <= w.x0 || x >= w.x1 || z <= w.z0 || z >= w.z1) continue;
+      amt = Math.max(amt, clamp01(Math.min(x - w.x0, w.x1 - x, z - w.z0, w.z1 - z) / 6));
+    }
+    for (const p of this.ponds) {
+      const d = p.r - Math.hypot(x - p.x, z - p.z);
+      if (d > 0) amt = Math.max(amt, clamp01(d / 6));
     }
     if (amt <= 0) return 0;
     for (const b of this.bridges) {
