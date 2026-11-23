@@ -81,7 +81,11 @@ export class Hud {
       b.addEventListener('pointerleave', up);
       b.addEventListener('pointercancel', up);
     }
-    $('#pause-btn').addEventListener('click', () => game.input.press('pause'));
+    // pointerdown, not click: fast taps elsewhere must not swallow the pause.
+    $('#pause-btn').addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      game.input.press('pause');
+    });
   }
 
   show(on) {
@@ -250,6 +254,10 @@ export class Hud {
   setObjective(title, text) {
     this.objective.firstElementChild.textContent = title;
     this.objective.lastElementChild.textContent = text;
+    // On phones the full sentence shows for a few seconds, then only the title stays.
+    this.objective.classList.remove('mini');
+    clearTimeout(this.miniTimer);
+    this.miniTimer = setTimeout(() => this.objective.classList.add('mini'), 6000);
     this.objective.classList.remove('pop');
     void this.objective.offsetWidth;
     this.objective.classList.add('pop');
@@ -347,6 +355,7 @@ export class Screens {
         <h2>WORLD TOUR</h2>
         <p>One very large ape. Eight cities. A lot of animals who had it coming.</p>
         <button class="big" data-act="select">PLAY</button>
+        ${this.game.installed ? '' : '<button data-act="install">Get the app</button>'}
         ${this.controls(this.game.input.touch)}
       </div>`;
   }
@@ -384,16 +393,29 @@ export class Screens {
     return `<div class="tour"><small>THE ROUTE</small><h2>WORLD TOUR</h2><div class="stops">${cards}</div>${this.levels(level)}<button class="link" data-act="select">Back</button></div>`;
   }
 
-  pause({ muted, quality, level }) {
-    return `<div class="panel"><h2>PAUSED</h2>
-        <button class="big" data-act="resume">RESUME</button>
-        <button data-act="retry">Restart from checkpoint</button>
-        <button data-act="mute">Sound: ${muted ? 'off' : 'on'}</button>
-        <button data-act="quality">Graphics: ${quality}</button>
-        <button data-act="level:next">Difficulty: ${level}</button>
-        <button data-act="quit">Quit to title</button>
+  pause({ muted, quality, level, view }) {
+    return `<div class="panel pause"><h2>PAUSED</h2>
+        <div class="menu">
+          <button class="big" data-act="resume">RESUME</button>
+          <button data-act="retry">Restart from checkpoint</button>
+          <button data-act="level:next">Difficulty: ${level}</button>
+          <button data-act="view">Camera: ${view}</button>
+          <button data-act="mute">Sound: ${muted ? 'off' : 'on'}</button>
+          <button data-act="quality">Graphics: ${quality}</button>
+          <button data-act="quit">Quit to title</button>
+        </div>
         ${this.controls(this.game.input.touch)}
       </div>`;
+  }
+
+  // How to put the game on a home screen, for whichever device this is.
+  install({ ios, android }) {
+    const steps = ios
+      ? ['Open this page in <b>Safari</b> (not inside another app).', 'Tap the <b>Share</b> button: the square with an arrow pointing up.', 'Scroll down and choose <b>Add to Home Screen</b>, then <b>Add</b>.', 'Open <b>Silverback</b> from your home screen. It runs full screen, sideways.']
+      : android
+        ? ['Open this page in <b>Chrome</b>.', 'Tap the <b>three dots</b> menu at the top right.', 'Choose <b>Add to Home screen</b> or <b>Install app</b>.', 'Open <b>Silverback</b> from your home screen.']
+        : ['In Chrome or Edge, click the <b>install</b> icon at the right of the address bar.', 'Or open the browser menu and choose <b>Install Silverback</b>.', 'On a phone, open this page there and use Get the app again.'];
+    return `<div class="panel"><small>PLAY IT LIKE AN APP</small><h2>ADD TO HOME SCREEN</h2><ol class="steps">${steps.map((t) => `<li>${t}</li>`).join('')}</ol><button class="big" data-act="title">GOT IT</button></div>`;
   }
 
   dead() {

@@ -31,6 +31,13 @@ const SCORE = { raccoon: 100, thrower: 130, pigeon: 120, chief: 800, eagle: 2500
 // quick and stuck speed up the boss and shorten the time he is stuck;
 // drops and heal are how generous the pretzels are; armor means an animal
 // that has started a swing cannot be jabbed out of it.
+// How far back the camera sits.
+export const VIEWS = {
+  near: { name: 'Near', dist: 44, pitch: 0.4, fov: 55 },
+  mid: { name: 'Mid', dist: 52, pitch: 0.43, fov: 57 },
+  far: { name: 'Far', dist: 64, pitch: 0.48, fov: 60 },
+};
+
 export const LEVELS = {
   easy: { id: 'easy', name: 'Easy', hp: 0.8, dmg: 0.6, cool: 1.45, tokens: 1, bossHp: 0.75, quick: 1.2, stuck: 1.3, drops: 1.6, heal: 40 },
   normal: { id: 'normal', name: 'Normal', hp: 1, dmg: 1.15, cool: 1, tokens: 2, bossHp: 1, quick: 1, stuck: 1, drops: 1, heal: 25 },
@@ -63,6 +70,15 @@ export class Game {
     this.screens = new Screens(ui, this);
     this.input = new Input(canvas, ui);
     this.cam = new ChaseCam(this.stage.camera);
+    // Phones get a wider shot by default; the pause menu cycles Near / Mid / Far.
+    let view = q.get('view');
+    try {
+      view = view || localStorage.getItem('view');
+    } catch {
+      /* private mode */
+    }
+    this.setView(VIEWS[view] ? view : this.input.touch ? 'far' : 'mid');
+    this.installed = matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
     let pick = q.get('ape');
     try {
       pick = pick || localStorage.getItem('ape');
@@ -192,6 +208,36 @@ export class Game {
 
   // ---- flow --------------------------------------------------------------
 
+  setView(id) {
+    const order = Object.keys(VIEWS);
+    if (id === 'next') id = order[(order.indexOf(this.view) + 1) % order.length];
+    const v = VIEWS[id];
+    if (!v) return;
+    this.view = id;
+    this.cam.wantDist = v.dist;
+    this.cam.pitch = v.pitch;
+    this.cam.fov = v.fov;
+    try {
+      localStorage.setItem('view', id);
+    } catch {
+      /* private mode */
+    }
+  }
+
+  // Android and desktop Chrome can show their own install prompt; everything
+  // else (iPhones above all) gets the steps spelled out.
+  install() {
+    const ask = window.__installPrompt;
+    if (ask) {
+      window.__installPrompt = null;
+      ask.prompt();
+      return;
+    }
+    const ua = navigator.userAgent;
+    const ios = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    this.screens.show('install', { ios, android: /Android/.test(ua) });
+  }
+
   setLevel(id) {
     const order = ['easy', 'normal', 'hard'];
     if (id === 'next') id = order[(order.indexOf(this.diff.id) + 1) % 3];
@@ -210,11 +256,18 @@ export class Game {
     if (name.startsWith('pick:')) return this.pickApe(name.slice(5));
     if (name.startsWith('level:')) {
       this.setLevel(name.slice(6));
-      if (this.state === 'pause') this.screens.show('pause', { muted: this.audio.muted, quality: this.stage.quality, level: this.diff.name });
+      if (this.state === 'pause') this.screens.show('pause', this.pauseInfo());
       else this.screens.show('tour', { cities: TOUR, level: this.diff.id });
       return;
     }
     switch (name) {
+      case 'install':
+        this.install();
+        break;
+      case 'view':
+        this.setView('next');
+        this.screens.show('pause', this.pauseInfo());
+        break;
       case 'select':
         this.showSelect();
         break;
@@ -237,7 +290,7 @@ export class Game {
         break;
       case 'mute':
         this.audio.setMuted(!this.audio.muted);
-        this.screens.show('pause', { muted: this.audio.muted, quality: this.stage.quality, level: this.diff.name });
+        this.screens.show('pause', this.pauseInfo());
         break;
       case 'quality': {
         const next = this.stage.quality === 'high' ? 'low' : 'high';
@@ -317,14 +370,20 @@ export class Game {
     }
   }
 
+  pauseInfo() {
+    return { muted: this.audio.muted, quality: this.stage.quality, level: this.diff.name, view: VIEWS[this.view].name };
+  }
+
   pause() {
     if (this.state !== 'play') return;
     this.state = 'pause';
-    this.screens.show('pause', { muted: this.audio.muted, quality: this.stage.quality, level: this.diff.name });
+    this.hud.show(false);
+    this.screens.show('pause', this.pauseInfo());
   }
 
   resume() {
     this.screens.hide();
+    this.hud.show(true);
     this.state = 'play';
   }
 
@@ -745,6 +804,7 @@ export class Game {
     this.slow = 1.2;
     this.after(1.9, () => {
       this.state = 'dead';
+      this.hud.show(false);
       this.screens.show('dead');
     });
   }

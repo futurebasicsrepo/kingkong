@@ -64,7 +64,9 @@ Each later city needs a map file like `src/world/philadelphia.js`, its animals, 
 - Two graphics tiers. Phones start on the lighter one; the pause menu switches.
 - The game watches its own frame rate and lowers the drawing resolution when a device cannot keep up, then raises it again when there is headroom.
 - On touch devices, starting a game asks for full screen and landscape where the browser allows it; a phone held upright is asked to turn sideways.
-- The game can be added to a phone's home screen (it ships a web app manifest and icons in `public/`). Opened from there it runs full screen in landscape, which is the only way to get that on iPhones.
+- The game can be added to a phone's home screen: the title screen has a **Get the app** button that shows the steps for the device (on iPhone: open in Safari, Share, Add to Home Screen; on Android, Chrome's own install prompt). Opened from there it runs full screen in landscape, which is the only way to get that on iPhones. A small service worker (`public/sw.js`) keeps it playable on a poor connection.
+- Page zoom is refused: iPhones ignore `user-scalable=no`, and fast taps on a button would otherwise zoom the whole page.
+- On phones the HUD is compact, the touch buttons are small and translucent until pressed, and the camera sits further back. The pause menu has a **Camera: Near / Mid / Far** setting.
 - Hits and knocks rumble on phones that support vibration.
 
 ## Running it
@@ -82,7 +84,7 @@ npm test
 
 Handy URLs while developing:
 
-- `/?autoplay=1` skips the title. `&start=oval`, `&start=logan`, `&start=mall` or `&start=boss` jumps to that checkpoint. `&level=easy` or `&level=hard` sets the difficulty. `&god=1` refills health when hit. `&ape=zo` picks an ape. `&gov=0` turns the frame-rate governor off.
+- `/?autoplay=1` skips the title. `&start=oval`, `&start=logan`, `&start=mall` or `&start=boss` jumps to that checkpoint. `&level=easy` or `&level=hard` sets the difficulty. `&view=near`, `mid` or `far` sets the camera distance. `&god=1` refills health when hit. `&ape=zo` picks an ape. `&gov=0` turns the frame-rate governor off.
 - `/?quality=high` or `/?quality=low` forces the graphics tier (phones default to low; the pause menu has a toggle).
 - `/city.html?cam=x,y,z&look=x,y,z` shows the city alone. `/view.html?who=ape&v=sloan&pose=run` shows a character (`who`: ape, raccoon, thrower, pigeon, eagle; `v`: which ape).
 
