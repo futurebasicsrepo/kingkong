@@ -45,7 +45,18 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
 
+import { stopById } from './stops.js';
+
 const loading = document.getElementById('loading');
+{
+  let id = new URLSearchParams(location.search).get('city');
+  try {
+    id = id || localStorage.getItem('city');
+  } catch {
+    /* private mode */
+  }
+  if (loading) loading.textContent = 'LOADING ' + stopById(id).name.toUpperCase();
+}
 try {
   const game = new Game(document.getElementById('game'), document.getElementById('ui'));
   game.run();

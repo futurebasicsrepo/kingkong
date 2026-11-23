@@ -177,6 +177,24 @@ export class Audio {
       case 'lose':
         [330, 277, 233, 175].forEach((f, i) => this.tone('sawtooth', f, f * 0.94, 0.4, 0.2, i * 0.28));
         break;
+      case 'bellow': {
+        // A bull's low, rough bellow.
+        const o = this.tone('sawtooth', 120, 62, 1.3, 0.55);
+        const lfo = this.ctx.createOscillator();
+        const lg = this.ctx.createGain();
+        lfo.frequency.value = 17;
+        lg.gain.value = 9;
+        lfo.connect(lg).connect(o.frequency);
+        lfo.start();
+        lfo.stop(now + 1.4);
+        this.tone('square', 60, 42, 1.2, 0.25);
+        this.noise(1.0, 0.35, 700, 180, 0.9, 'bandpass');
+        break;
+      }
+      case 'snort':
+        this.noise(0.22, 0.5, 1600, 400, 0.8, 'bandpass');
+        this.noise(0.18, 0.4, 1400, 350, 0.8, 'bandpass', 0.28);
+        break;
       case 'bell':
         [220, 440, 554, 659, 880].forEach((f, i) => this.tone('sine', f, f * 0.995, 2.2 - i * 0.25, 0.3 / (i + 1)));
         this.noise(0.05, 0.3, 3000, 1200);

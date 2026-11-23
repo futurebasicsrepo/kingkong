@@ -4,6 +4,8 @@ import { createStage } from './engine/render.js';
 import { Ape, ATTACKS, APES } from './actors/ape.js';
 import { Raccoon, Pigeon } from './actors/enemies.js';
 import { Eagle } from './actors/eagle.js';
+import { Bull } from './actors/bull.js';
+import { makeRat, makeGator } from './actors/enemies.js';
 
 const q = new URLSearchParams(location.search);
 const who = q.get('who') || 'ape';
@@ -22,7 +24,23 @@ function makeViewerActor(who, game, pose) {
   game.world = { groundHeight: () => 0, resolveCircle() {}, bounds: { x0: -999, x1: 999, z0: -999, z1: 999 }, places: { perch: { x: 0, y: 0, z: 0 } } };
   game.player = { pos: new THREE.Vector3(0, 0, 40), vel: new THREE.Vector3(), state: 'free', takeDamage() {} };
   let e;
-  if (who === 'eagle') {
+  if (who === 'bull') {
+    e = new Bull(game, 0, 0);
+    e.state = pose || 'perch';
+    e.taunt = pose === 'taunt';
+    e.think = (dt) => {
+      const m = { charge: [1.6, 0.6, 0, 0], perch: [0, 0.15, 0, 0], taunt: [0, -0.5, 0, 0.6], stuck: [0, 0.7, 0.08, 0], tired: [0, 0.5, 0, 0] }[pose] || [0, 0.15, 0, 0];
+      e.applyPose(dt, ...m);
+    };
+  } else if (who === 'rat') {
+    e = makeRat(game, 0, 0);
+    e.state = pose === 'windup' ? 'windup' : 'viewer';
+    e.scale = 1;
+  } else if (who === 'gator') {
+    e = makeGator(game, 0, 0);
+    e.state = pose === 'windup' ? 'poundWind' : 'viewer';
+    e.scale = 1;
+  } else if (who === 'eagle') {
     e = new Eagle(game, 0, 0);
     e.viewerPose(pose);
   } else if (who === 'pigeon') {

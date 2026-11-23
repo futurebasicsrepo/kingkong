@@ -95,3 +95,14 @@ test('knocking a building down removes every ledge', () => {
   assert.equal(res.destroyed.length, 1);
   assert.equal(city.roofAt(0, 0, 100), 0);
 });
+
+test('ponds and harbours are wet only where they are', () => {
+  const city = makeCity();
+  city.addPond(50, 50, 20);
+  city.addWater(-100, 100, 60, 200);
+  assert.equal(city.waterAmount(50, 50), 1);
+  assert.equal(city.waterAmount(90, 50), 0, 'beside the pond, north of the harbour');
+  assert.equal(city.waterAmount(0, 120), 1, 'out in the harbour');
+  assert.equal(city.waterAmount(0, 40), 0, 'north of the harbour');
+  assert.ok(city.groundHeight(50, 50) < -3);
+});

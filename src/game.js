@@ -1,30 +1,52 @@
 import * as THREE from 'three';
 import { createStage } from './engine/render.js';
-import { buildPhiladelphia } from './world/philadelphia.js';
 import { Fx } from './engine/fx.js';
 import { Audio } from './engine/audio.js';
 import { Input } from './engine/input.js';
 import { ChaseCam } from './engine/camera.js';
-import { GEO } from './engine/build.js';
+import { GEO, MeshBuilder } from './engine/build.js';
 import { clamp, rand } from './engine/util.js';
 import { Ape, APES } from './actors/ape.js';
-import { Raccoon, Pigeon } from './actors/enemies.js';
+import { Raccoon, Pigeon, makeRat, makeGator } from './actors/enemies.js';
 import { Eagle } from './actors/eagle.js';
+import { Bull } from './actors/bull.js';
+import { STOPS, stopById, ORDINAL, GOLD_NAMES } from './stops.js';
 import { Hud, Screens } from './ui/hud.js';
 
-// The tour, in order, and who runs each city. Only the first stop is built so far.
-export const TOUR = [
-  { name: 'Philadelphia', rival: 'Baldwin, the Bald Eagle of Broad Street', open: true },
-  { name: 'New York City', rival: 'Bullion, the Wall Street Bull' },
-  { name: 'Santa Clara', rival: 'Nugget, the Gold Rush Grizzly' },
-  { name: 'San Francisco', rival: 'Barker, the Sea Lion of the Bay' },
-  { name: 'London', rival: 'Regent, the Lion of Trafalgar' },
-  { name: 'Tokyo', rival: 'Kabuto, the Giant Stag Beetle' },
-  { name: 'Paris', rival: 'Chanticleer, the Rooster of Paris' },
-  { name: 'Shanghai', rival: 'Huangpu, the Tiger of the Bund' },
-];
+const SCORE = { raccoon: 100, thrower: 130, pigeon: 120, chief: 800, rat: 40, gator: 900, eagle: 2500, bull: 3000 };
 
-const SCORE = { raccoon: 100, thrower: 130, pigeon: 120, chief: 800, eagle: 2500 };
+// The healing snack and the hidden golden thing, as single meshes.
+function snackGeometry(kind) {
+  const mb = new MeshBuilder();
+  if (kind === 'pizza') {
+    // A slice: cheese on a thin base, crust along the wide end, pepperoni.
+    const tri = new THREE.Shape();
+    tri.moveTo(0, -2.2);
+    tri.lineTo(1.9, 2.0);
+    tri.lineTo(-1.9, 2.0);
+    tri.closePath();
+    mb.add(new THREE.ExtrudeGeometry(tri, { depth: 0.45, bevelEnabled: false }), 0xf2b640, 0, 0, -0.2);
+    mb.add(GEO.cyl(8), 0xb8702a, 0, 2.05, 0, 2.0, 0.7, 0.55, 0, Math.PI / 2, Math.PI / 2);
+    for (const [px, py] of [[0, 0.9], [-0.7, -0.2], [0.6, -0.4], [0.1, 1.6], [-0.9, 1.4], [0.9, 1.3]]) mb.add(GEO.cyl(10), 0xb2301e, px, py, 0.32, 0.38, 0.1, 0.38, 0, Math.PI / 2, 0);
+  } else if (kind === 'apple') {
+    mb.add(GEO.sphere(14, 10), 0xffffff, 0, 0, 0, 1.75, 1.6, 1.75);
+    mb.add(GEO.cyl(6), 0xffffff, 0.1, 1.3, 0, 0.16, 1.1, 0.16, 0, 0, -0.2);
+    mb.add(GEO.ico(0), 0xffffff, 0.75, 2.0, 0, 0.75, 0.16, 0.42, 0, 0, -0.5);
+  } else {
+    mb.add(new THREE.TorusKnotGeometry(1.7, 0.52, 48, 7, 2, 3), 0xb8702a, 0, 0, 0);
+    for (let k = 0; k < 7; k++) mb.add(GEO.cube(), 0xf2eee4, Math.cos(k * 1.7) * 1.9, Math.sin(k * 2.3) * 1.5, 0.5, 0.18, 0.18, 0.18);
+  }
+  return mb.geometry();
+}
+
+// Which stops have been beaten on this device.
+function cleared() {
+  try {
+    return JSON.parse(localStorage.getItem('cleared') || '[]');
+  } catch {
+    return [];
+  }
+}
 
 // How hard the animals hit back. hp and dmg scale the animals; cool stretches
 // the gaps between their attacks; tokens is how many may attack at once;
@@ -62,8 +84,16 @@ export class Game {
       /* private mode */
     }
     this.diff = LEVELS[level] || LEVELS.normal;
+    let cityId = q.get('city');
+    try {
+      cityId = cityId || localStorage.getItem('city');
+    } catch {
+      /* private mode */
+    }
+    this.stop = stopById(cityId);
+    this.stopIndex = STOPS.indexOf(this.stop);
     this.stage = createStage(canvas, { quality: q.get('quality') || saved || undefined });
-    this.world = buildPhiladelphia(this.stage.scene);
+    this.world = this.stop.build(this.stage.scene);
     this.fx = new Fx(this.stage.scene);
     this.audio = new Audio();
     this.hud = new Hud(ui, this);
@@ -114,25 +144,7 @@ export class Game {
     this.resetStats();
 
     const P = this.world.places;
-    this.objectives = [
-      { type: 'gate', title: 'Break out', text: 'Punch the zoo gate down', at: P.zooGate, spawn: P.start },
-      {
-        type: 'wave', title: 'Eakins Oval', text: 'Clear the Trash Pandas off the Art Museum steps', at: P.oval, r: 62,
-        spawn: { x: -500, z: -262, yaw: Math.PI / 2 }, call: ['TRASH PANDAS', 'They got into the Schuylkill punch too'],
-        waves: [[['raccoon', 3]], [['raccoon', 3], ['thrower', 2]]],
-      },
-      {
-        type: 'wave', title: 'Logan Circle', text: 'Swat the pigeons off the Parkway', at: P.logan, r: 54,
-        spawn: { x: P.oval.x + 10, z: P.oval.z + 10, yaw: 0.85 }, call: ['INCOMING', 'Jump and punch, or wait for the dive'],
-        waves: [[['pigeon', 4]], [['pigeon', 3], ['raccoon', 3]], [['thrower', 2], ['pigeon', 3], ['raccoon', 3]]],
-      },
-      {
-        type: 'wave', title: 'Independence Mall', text: 'The Trash Panda king is ringing the Liberty Bell', at: { x: 273, z: -92 }, r: 60,
-        spawn: { x: P.logan.x + 6, z: P.logan.z + 34, yaw: 1.3 }, call: ['OLD CITY', 'Get them off the Mall'],
-        waves: [[['raccoon', 3], ['pigeon', 2]], [['thrower', 2], ['raccoon', 3]], [['chief', 1], ['raccoon', 2]]],
-      },
-      { type: 'boss', title: 'City Hall', text: 'Baldwin is waiting on the tower', at: P.dilworth, r: 70, spawn: { x: 150, z: -30, yaw: -1.5 } },
-    ];
+    this.objectives = this.stop.objectives(P);
     this.checkpoint = 0;
     this.objIndex = 0;
 
@@ -145,10 +157,13 @@ export class Game {
     this.beacon.visible = false;
     this.stage.scene.add(this.beacon);
 
-    // One shared pretzel.
-    const tan = new THREE.MeshStandardMaterial({ color: 0xb8702a, roughness: 0.6, emissive: 0x5a2a00, emissiveIntensity: 0.5 });
-    this.pretzelGeo = new THREE.TorusKnotGeometry(1.7, 0.52, 48, 7, 2, 3);
-    this.pretzelMat = tan;
+    // What heals the ape here (a soft pretzel, a slice of pizza) and what is hidden.
+    this.snackGeo = snackGeometry(this.stop.snack);
+    this.snackMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, emissive: 0x5a2a00, emissiveIntensity: 0.35 });
+    this.goldGeo = snackGeometry(this.stop.gold);
+    this.goldNames = GOLD_NAMES[this.stop.gold];
+    this.coinGeo = new THREE.CylinderGeometry(1.4, 1.4, 0.35, 14).rotateX(Math.PI / 2);
+    this.coinMat = new THREE.MeshStandardMaterial({ color: 0xffc21a, roughness: 0.3, metalness: 0.8, emissive: 0x7a4a00, emissiveIntensity: 0.6 });
     this.trashGeo = GEO.cyl(8, 0.9);
     this.trashMat = new THREE.MeshStandardMaterial({ color: 0x8a9096, roughness: 0.5, metalness: 0.6 });
     this.featherGeo = GEO.cube();
@@ -192,7 +207,12 @@ export class Game {
     });
 
     this.placeGolds();
-    const jump = { oval: 1, logan: 2, mall: 3, boss: 4 }[q.get('start')];
+    try {
+      localStorage.setItem('city', this.stop.id);
+    } catch {
+      /* private mode */
+    }
+    const jump = this.stop.starts[q.get('start')];
     if (jump !== undefined) this.checkpoint = jump;
     if (q.get('autoplay') || jump !== undefined) this.start();
     else this.screens.show('title');
@@ -252,12 +272,31 @@ export class Game {
     }
   }
 
+  // Reload into another city (or this one), keeping the chosen settings.
+  go(id, extra = '') {
+    location.search = `?city=${id}${extra}`;
+  }
+
+  tourInfo() {
+    const done = cleared();
+    return {
+      cities: STOPS.map((c) => ({ ...c, open: !!c.build, cleared: done.includes(c.id), here: c.id === this.stop.id })),
+      level: this.diff.id,
+    };
+  }
+
   action(name) {
     if (name.startsWith('pick:')) return this.pickApe(name.slice(5));
+    if (name.startsWith('start:')) {
+      const id = name.slice(6);
+      if (id === this.stop.id) this.start();
+      else this.go(id, '&autoplay=1');
+      return;
+    }
     if (name.startsWith('level:')) {
       this.setLevel(name.slice(6));
       if (this.state === 'pause') this.screens.show('pause', this.pauseInfo());
-      else this.screens.show('tour', { cities: TOUR, level: this.diff.id });
+      else this.screens.show('tour', this.tourInfo());
       return;
     }
     switch (name) {
@@ -274,7 +313,7 @@ export class Game {
       case 'tour':
         this.player.showcase = null;
         this.state = 'title';
-        this.screens.show('tour', { cities: TOUR, level: this.diff.id });
+        this.screens.show('tour', this.tourInfo());
         break;
       case 'title':
         this.screens.show('title');
@@ -299,14 +338,19 @@ export class Game {
         } catch {
           /* private mode */
         }
-        location.search = `?autoplay=1&quality=${next}`;
+        this.go(this.stop.id, `&autoplay=1&quality=${next}`);
         break;
       }
       case 'again':
-        location.search = '?autoplay=1';
+        this.go(this.stop.id, '&autoplay=1');
         break;
+      case 'next': {
+        const next = STOPS[this.stopIndex + 1];
+        if (next && next.build) this.go(next.id, '&autoplay=1');
+        break;
+      }
       case 'quit':
-        location.search = '';
+        this.go(this.stop.id);
         break;
       case 'roam':
         this.screens.hide();
@@ -321,9 +365,9 @@ export class Game {
   // The line-up: the chosen ape stands on the museum terrace while the
   // player flicks through the five.
   showSelect() {
-    const t = this.world.places.terrace;
+    const t = this.stop.stage(this.world.places);
     this.state = 'select';
-    this.player.reset(t.x, t.z, this.world.places.terraceYaw ?? 0.86);
+    this.player.reset(t.x, t.z, t.yaw);
     this.player.pos.y = this.world.groundHeight(t.x, t.z);
     this.player.showcase = 'idle';
     this.screens.show('select', { apes: APES, current: this.player.variant.id });
@@ -365,7 +409,7 @@ export class Game {
     this.restartFromCheckpoint(true);
     this.audio.startMusic(0);
     if (this.checkpoint === 0) {
-      this.screens.intro('STOP ONE', 'PHILADELPHIA', 'Something in the Schuylkill made everything big. The zoo gate is shut. Not for long.');
+      this.screens.intro('STOP ' + ORDINAL[this.stopIndex], this.stop.name.toUpperCase(), this.stop.intro);
       this.hud.hint(this.input.touch ? '<b>Left thumb</b> to move &nbsp; <b>drag</b> to look' : '<b>W A S D</b> to move &nbsp; <b>drag the mouse</b> to look');
     }
   }
@@ -395,7 +439,8 @@ export class Game {
   spawnBoss() {
     if (this.boss && !this.boss.remove) this.boss.rig.dispose();
     this.enemies = this.enemies.filter((e) => e !== this.boss);
-    this.boss = new Eagle(this, 0, 0);
+    const P = this.world.places;
+    this.boss = this.stop.boss === 'bull' ? new Bull(this, P.bull.x, P.bull.z) : new Eagle(this, 0, 0);
     this.enemies.push(this.boss);
     this.bossActive = false;
   }
@@ -460,8 +505,12 @@ export class Game {
         });
       }
     } else if (o.type === 'gate') {
-      this.hud.toast('OUT!', 'Cross the bridge to the Art Museum');
+      this.hud.toast('OUT!', o.done);
       this.hud.hint('');
+    } else if (o.type === 'climb') {
+      this.hud.toast('TOP OF THE WORLD', o.done, 2600);
+      this.hud.hint('');
+      this.stats.score += 1000;
     }
     this.setObjective(this.objIndex + 1);
   }
@@ -480,8 +529,23 @@ export class Game {
         this.hud.hint(this.input.touch ? 'Tap <b>PUNCH</b> to smash the gate' : 'Punch the gate: <b>J</b> or <b>click</b>');
       }
       // Out through the gate, or over the wall: either way he is out.
-      const out = p.pos.x > o.at.x + 8 || Math.abs(p.pos.z - o.at.z) > 56 || p.pos.x < o.at.x - 104;
+      const r = o.inside;
+      const out = p.pos.x < r.x0 || p.pos.x > r.x1 || p.pos.z < r.z0 || p.pos.z > r.z1;
       if (this.world.gate.state !== 'up' || (out && p.onGround)) this.completeObjective();
+    } else if (o.type === 'climb') {
+      // Get to the top of one building. Animals come for him on the way up.
+      if (d < 90 && !o.engaged) {
+        o.engaged = true;
+        this.hud.hint(this.input.touch ? 'Run into the wall and keep pushing to climb. <b>JUMP</b> lets go.' : 'Run into the wall and keep holding to climb. <b>Space</b> lets go.');
+        this.after(8, () => this.hud.hint(''));
+      }
+      if (o.harass && !o.harassed && p.pos.y > 50 && d < 60) {
+        o.harassed = true;
+        this.hud.toast('INCOMING', 'Keep climbing', 1500);
+        for (const [kind, count] of o.harass) for (let k = 0; k < count; k++) this.after(k * 0.3, () => this.spawnEnemy(kind, p.pos.x + rand(-40, 40), p.pos.z + rand(-40, 40)));
+      }
+      this.beacon.visible = p.pos.y < 20 && d > 34;
+      if (p.onGround && p.pos.y >= o.height - 2 && d < 40) this.completeObjective();
     } else if (o.type === 'wave') {
       if (!o.engaged) {
         if (d < o.r) {
@@ -523,11 +587,11 @@ export class Game {
           this.cam.yaw = Math.atan2(b.pos.x - p.pos.x, b.pos.z - p.pos.z);
           this.cam.snap(p, true);
         });
-        this.screens.intro('THE BOSS OF BROAD STREET', this.boss.name, 'Dodge the red marks. Hit him mid-swoop, or batter him while his talons are stuck.');
-        this.audio.play('screech');
+        this.screens.intro(o.call[0], this.boss.name, o.call[1]);
+        this.audio.play(o.sound);
         this.audio.heat = 1;
         this.objectivePos = null;
-        this.hud.setObjective('Boss fight', 'Batter Baldwin');
+        this.hud.setObjective('Boss fight', o.fight);
       }
     }
   }
@@ -554,23 +618,33 @@ export class Game {
 
   spawnEnemy(kind, x, z) {
     let e;
-    if (kind === 'chief') {
-      e = new Raccoon(this, x, z, false, true);
+    if (kind === 'chief' || kind === 'gator') {
+      e = kind === 'gator' ? makeGator(this, x, z) : new Raccoon(this, x, z, false, true);
+      if (kind === 'gator') {
+        // Up out of a manhole.
+        this.fx.ring(x, 0.5, z, 2, 14, 0.5, 0xd8d0c0);
+        this.fx.debris(x, 1, z, 6, 0x3a3a3a, 18, 1.2, 1);
+        this.world.trample(x, z, 3, this.onTreeFlattened, this.onCarKicked);
+      }
       this.barTarget = e;
       this.hud.showBoss(e);
       this.hud.toast(e.name, e.title, 2200);
       this.audio.play('roar');
     } else if (kind === 'pigeon') e = new Pigeon(this, x, z);
+    else if (kind === 'rat') e = makeRat(this, x, z);
     else e = new Raccoon(this, x, z, kind === 'thrower');
     if (kind !== 'pigeon') this.fx.dust(x, 1, z, 6, 3);
     this.enemies.push(e);
     return e;
   }
 
+  summon(kind, n, x, z, spread, say) {
+    for (let k = 0; k < n; k++) this.after(k * 0.25, () => this.spawnEnemy(kind, x + rand(-spread, spread), z + rand(-spread, spread)));
+    if (say) this.hud.toast('BACKUP!', say, 1500);
+  }
+
   summonPigeons(n) {
-    const b = this.boss;
-    for (let k = 0; k < n; k++) this.after(k * 0.25, () => this.spawnEnemy('pigeon', b.pos.x + rand(-30, 30), b.pos.z + rand(-30, 30)));
-    this.hud.toast('BACKUP!', 'He called the flock', 1500);
+    this.summon('pigeon', n, this.boss.pos.x, this.boss.pos.z, 30, 'He called the flock');
   }
 
   // ---- combat ------------------------------------------------------------
@@ -725,12 +799,13 @@ export class Game {
     if (Math.random() < 0.3 * this.diff.drops) this.dropPretzel(e.pos.x, e.pos.z);
   }
 
-  onCounter(boss) {
-    this.hud.toast('COUNTER!', 'Punched out of the sky', 1400);
+  onCounter(boss, say = 'Punched out of the sky') {
+    this.hud.toast('COUNTER!', say, 1400);
     this.slow = 0.5;
     this.cam.shake(0.8);
     this.stats.score += 300;
-    this.fx.feathers(boss.pos.x, boss.pos.y + 8, boss.pos.z, 16, 0x5a3f2c);
+    if (boss.kind === 'eagle') this.fx.feathers(boss.pos.x, boss.pos.y + 8, boss.pos.z, 16, 0x5a3f2c);
+    else this.fx.dust(boss.pos.x, boss.pos.y + 4, boss.pos.z, 10, 4);
   }
 
   onBossDefeated() {
@@ -741,7 +816,13 @@ export class Game {
     this.audio.heat = 0;
     for (const e of this.enemies) if (!e.dead && !e.boss) e.die(rand(-1, 1), rand(-1, 1), true);
     for (const h of this.hazards) h.t = h.delay + 9;
-    this.hud.toast('BATTERED!', 'Baldwin is out of here', 3000);
+    this.hud.toast('BATTERED!', this.stop.bossName + ' is out of here', 3000);
+    try {
+      const done = cleared();
+      if (!done.includes(this.stop.id)) localStorage.setItem('cleared', JSON.stringify([...done, this.stop.id]));
+    } catch {
+      /* private mode */
+    }
     this.setObjective(this.objectives.length);
     this.after(2.6, () => {
       this.player.victory = true;
@@ -752,7 +833,8 @@ export class Game {
     this.after(6.2, () => {
       this.state = 'win';
       this.hud.show(false);
-      this.screens.show('win', { stats: this.stats, next: TOUR[1].name, level: this.diff.name, golds: this.golds.length });
+      const next = STOPS[this.stopIndex + 1];
+      this.screens.show('win', { stats: this.stats, stop: this.stop, n: ORDINAL[this.stopIndex], next, level: this.diff.name, golds: this.golds.length, goldName: this.goldNames.short });
     });
   }
 
@@ -838,17 +920,21 @@ export class Game {
     return ground;
   }
 
-  featherStrike(from, tx, tz, delay) {
+  // Something thrown down at the ape that lands after `delay`: an eagle's
+  // feather, or one of Bullion's gold coins.
+  featherStrike(from, tx, tz, delay, kind = 'feather') {
     const ty = this.standHeight(tx, tz);
-    const mesh = new THREE.Mesh(this.featherGeo, this.featherMat);
-    mesh.scale.set(1.3, 0.3, 8);
+    const coin = kind === 'coin';
+    const mesh = new THREE.Mesh(coin ? this.coinGeo : this.featherGeo, coin ? this.coinMat : this.featherMat);
+    if (coin) mesh.scale.setScalar(1.6);
+    else mesh.scale.set(1.3, 0.3, 8);
     const sx = from.pos.x;
     const sy = from.pos.y + 10;
     const sz = from.pos.z;
     mesh.position.set(sx, sy, sz);
     mesh.lookAt(tx, ty, tz);
     this.stage.scene.add(mesh);
-    this.hazards.push({ kind: 'feather', mesh, t: 0, delay, x: tx, z: tz, y: ty, r: 6, dmg: 9, sx, sy, sz, marker: this.fx.marker(tx, tz, 6, delay, ty) });
+    this.hazards.push({ kind, mesh, t: 0, delay, x: tx, z: tz, y: ty, r: 6, dmg: 9, sx, sy, sz, marker: this.fx.marker(tx, tz, 6, delay, ty) });
   }
 
   updateHazards(dt) {
@@ -877,6 +963,8 @@ export class Game {
         if (h.kind === 'trash') {
           this.fx.debris(h.x, h.y + 1, h.z, 5, 0x8a9096, 16, 0.7, 1);
           h.done = true;
+        } else if (h.kind === 'coin') {
+          this.fx.spark(h.x, h.y + 1.5, h.z, 3.5, 0xffe08a);
         } else {
           this.fx.feathers(h.x, h.y + 2, h.z, 2);
         }
@@ -895,32 +983,12 @@ export class Game {
   // ---- golden pretzels: ten hidden round the city -------------------------
 
   placeGolds() {
-    const w = this.world;
-    const P = w.places;
-    let tallest = null;
-    let house = null;
-    for (const b of w.buildings) {
-      if (!b.solid || b.fixed) continue;
-      if (!b.spire && (!tallest || b.top > tallest.top)) tallest = b;
-      if (!house && b.h < 15 && b.z > 240 && Math.abs(b.x) < 120 && !b.tiers.length) house = b;
-    }
-    const spots = [
-      [-604, P.zooGate.z + 30],
-      [P.terrace.x, P.terrace.z],
-      [P.logan.x + 16, P.logan.z + 10],
-      [-195, 195],
-      [P.liberty.x, P.liberty.z + 16],
-      [78, -117],
-      [-574, 6],
-      [400, -156],
-    ];
-    if (tallest) spots.push([tallest.x, tallest.z]);
-    if (house) spots.push([house.x, house.z]);
+    const spots = this.stop.golds(this.world);
     const mat = new THREE.MeshStandardMaterial({ color: 0xffc21a, roughness: 0.3, metalness: 0.7, emissive: 0xb06a00, emissiveIntensity: 0.9 });
     const glow = new THREE.MeshBasicMaterial({ color: 0xffd23a, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, fog: false });
     const beam = new THREE.CylinderGeometry(1.6, 1.6, 44, 10, 1, true).translate(0, 16, 0);
     this.golds = spots.map(([x, z]) => {
-      const mesh = new THREE.Mesh(this.pretzelGeo, mat);
+      const mesh = new THREE.Mesh(this.goldGeo, mat);
       mesh.scale.setScalar(1.7);
       const light = new THREE.Mesh(beam, glow);
       light.renderOrder = 3;
@@ -955,9 +1023,9 @@ export class Game {
         this.hud.setGold(n, total);
         if (n === total) {
           this.stats.score += 2000;
-          this.hud.toast('PRETZEL KING', 'All ' + total + ' golden pretzels: +2,000', 3200);
+          this.hud.toast(this.goldNames.all, 'All ' + total + ' ' + this.goldNames.plural + ': +2,000', 3200);
         } else {
-          this.hud.toast('GOLDEN PRETZEL', n + ' of ' + total + ' found', 1800);
+          this.hud.toast(this.goldNames.one, n + ' of ' + total + ' found', 1800);
         }
       }
     }
@@ -968,7 +1036,7 @@ export class Game {
     const b = this.world.bounds;
     x = clamp(x, b.x0 + 4, b.x1 - 4);
     z = clamp(z, b.z0 + 4, b.z1 - 4);
-    const mesh = new THREE.Mesh(this.pretzelGeo, this.pretzelMat);
+    const mesh = new THREE.Mesh(this.snackGeo, this.snackMat);
     mesh.castShadow = true;
     mesh.position.set(x, this.world.groundHeight(x, z) + 4, z);
     this.stage.scene.add(mesh);
@@ -1029,12 +1097,13 @@ export class Game {
       return;
     }
     if (this.state === 'title' || this.state === 'win') {
-      this.cam.orbit(rawDt, -40, 40, -10, 290, 120, 0.06);
+      const o = this.stop.orbit;
+      this.cam.orbit(rawDt, o.x, o.y, o.z, o.r, o.h, 0.06);
       this.time += rawDt;
       for (const e of this.enemies) e.update(rawDt);
       this.world.update(rawDt);
       this.fx.update(rawDt);
-      this.stage.setFocus(-40, 0, -10);
+      this.stage.setFocus(o.x, 0, o.z);
       this.input.flush();
       return;
     }
@@ -1125,13 +1194,13 @@ export class Game {
     this.world.update(dt);
     this.fx.update(dt);
     if (this.cut) {
-      // Looking up at the boss on his perch.
-      const pl = this.world.places.perch;
+      // A slow turn round the boss where he waits.
+      const f = this.boss.cutFocus();
       const c = this.stage.camera;
       this.cut.t += rawDt;
-      const a = -0.75 + this.cut.t * 0.12;
-      c.position.set(pl.x + Math.sin(a) * 78, pl.y - 6, pl.z + Math.cos(a) * 78);
-      c.lookAt(pl.x, pl.y + 10, pl.z);
+      const a = f.a + this.cut.t * 0.12;
+      c.position.set(f.x + Math.sin(a) * f.r, f.y + f.dy, f.z + Math.cos(a) * f.r);
+      c.lookAt(f.x, f.y + f.look, f.z);
     } else {
       this.cam.update(rawDt, this);
     }

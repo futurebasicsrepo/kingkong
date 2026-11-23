@@ -807,23 +807,24 @@ const GROUND_FRAGMENT = /* glsl */ `
       col *= 1.0 - 0.35 * damp;
       gRough = mix(gRough, 0.12, damp);
       // Street grid: gutters, tyre tracks and zebra crossings.
-      vec2 s = (fract(p / uGrid.x + 0.5) - 0.5) * uGrid.x;
+      vec2 s = (fract((p - uPitch.zw) / uPitch.xy + 0.5) - 0.5) * uPitch.xy;
       vec2 as = abs(s);
       float inside = step(uGridExt.x, p.x) * step(p.x, uGridExt.y) * step(uGridExt.z, p.y) * step(p.y, uGridExt.w) * uGrid.z;
-      float hs = uGrid.y;
-      float nsStreet = step(as.x, hs);
-      float ewStreet = step(as.y, hs);
-      float gutter = max(nsStreet * smoothstep(hs - 1.6, hs, as.x), ewStreet * smoothstep(hs - 1.6, hs, as.y));
+      float hx = uHalf.x;
+      float hz = uHalf.y;
+      float nsStreet = step(as.x, hx);
+      float ewStreet = step(as.y, hz);
+      float gutter = max(nsStreet * smoothstep(hx - 1.6, hx, as.x), ewStreet * smoothstep(hz - 1.6, hz, as.y));
       col *= 1.0 - 0.22 * gutter * inside;
       float tracks = nsStreet * (1.0 - ewStreet) * (1.0 - smoothstep(0.5, 1.1, abs(abs(as.x - 4.4) - 0.9)))
                    + ewStreet * (1.0 - nsStreet) * (1.0 - smoothstep(0.5, 1.1, abs(abs(as.y - 4.4) - 0.9)));
       col *= 1.0 - 0.1 * tracks * inside;
       gRough -= 0.1 * tracks * inside;
       float zk = keep(fwp * 1.4);
-      float zebraNS = step(as.x, hs - 0.9) * step(hs + 1.6, as.y) * step(as.y, hs + 5.2) * step(fract(s.x / 1.7), 0.52);
-      float zebraEW = step(as.y, hs - 0.9) * step(hs + 1.6, as.x) * step(as.x, hs + 5.2) * step(fract(s.y / 1.7), 0.52);
-      float stopNS = step(as.x, hs - 0.9) * step(hs + 6.6, as.y) * step(as.y, hs + 7.2) * step(0.0, s.x * s.y);
-      float stopEW = step(as.y, hs - 0.9) * step(hs + 6.6, as.x) * step(as.x, hs + 7.2) * step(s.x * s.y, 0.0);
+      float zebraNS = step(as.x, hx - 0.9) * step(hz + 1.6, as.y) * step(as.y, hz + 5.2) * step(fract(s.x / 1.7), 0.52);
+      float zebraEW = step(as.y, hz - 0.9) * step(hx + 1.6, as.x) * step(as.x, hx + 5.2) * step(fract(s.y / 1.7), 0.52);
+      float stopNS = step(as.x, hx - 0.9) * step(hz + 6.6, as.y) * step(as.y, hz + 7.2) * step(0.0, s.x * s.y);
+      float stopEW = step(as.y, hz - 0.9) * step(hx + 6.6, as.x) * step(as.x, hx + 7.2) * step(s.x * s.y, 0.0);
       float paint = max(max(zebraNS, zebraEW), max(stopNS, stopEW)) * inside;
       float worn = 0.55 + 0.45 * smoothstep(0.25, 0.6, vnoise(p * 1.7 + 5.0));
       col = mix(col, vec3(0.74, 0.73, 0.69) * (0.8 + 0.2 * grit), paint * worn * mix(0.5, 1.0, zk));
@@ -885,14 +886,15 @@ const GROUND_FRAGMENT_LOW = /* glsl */ `
     vec3 col = base;
     #if GROUND_KIND == 0
       col = base * (0.9 + 0.18 * vnoise(p * 0.05 + 3.0));
-      vec2 s = (fract(p / uGrid.x + 0.5) - 0.5) * uGrid.x;
+      vec2 s = (fract((p - uPitch.zw) / uPitch.xy + 0.5) - 0.5) * uPitch.xy;
       vec2 as = abs(s);
       float inside = step(uGridExt.x, p.x) * step(p.x, uGridExt.y) * step(uGridExt.z, p.y) * step(p.y, uGridExt.w) * uGrid.z;
-      float hs = uGrid.y;
-      float zebraNS = step(as.x, hs - 0.9) * step(hs + 1.6, as.y) * step(as.y, hs + 5.2) * step(fract(s.x / 1.7), 0.52);
-      float zebraEW = step(as.y, hs - 0.9) * step(hs + 1.6, as.x) * step(as.x, hs + 5.2) * step(fract(s.y / 1.7), 0.52);
-      float stopNS = step(as.x, hs - 0.9) * step(hs + 6.6, as.y) * step(as.y, hs + 7.2) * step(0.0, s.x * s.y);
-      float stopEW = step(as.y, hs - 0.9) * step(hs + 6.6, as.x) * step(as.x, hs + 7.2) * step(s.x * s.y, 0.0);
+      float hx = uHalf.x;
+      float hz = uHalf.y;
+      float zebraNS = step(as.x, hx - 0.9) * step(hz + 1.6, as.y) * step(as.y, hz + 5.2) * step(fract(s.x / 1.7), 0.52);
+      float zebraEW = step(as.y, hz - 0.9) * step(hx + 1.6, as.x) * step(as.x, hx + 5.2) * step(fract(s.y / 1.7), 0.52);
+      float stopNS = step(as.x, hx - 0.9) * step(hz + 6.6, as.y) * step(as.y, hz + 7.2) * step(0.0, s.x * s.y);
+      float stopEW = step(as.y, hz - 0.9) * step(hx + 6.6, as.x) * step(as.x, hx + 7.2) * step(s.x * s.y, 0.0);
       float paint = max(max(zebraNS, zebraEW), max(stopNS, stopEW)) * inside;
       col = mix(col, vec3(0.6, 0.59, 0.56), paint * mix(0.45, 0.85, keep(fwp * 1.4)));
     #else
@@ -924,12 +926,18 @@ export function groundMaterial(kind = 0, color = 0xffffff, grid = null) {
   mat.defines = { ...(mat.defines || {}), GROUND_KIND: kind };
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uGrid = { value: new THREE.Vector3(grid ? grid.pitch : 78, grid ? grid.half : 9, grid ? 1 : 0) };
+    // Streets may be spaced and sized differently each way (Manhattan's long
+    // blocks), and the grid may be offset from the origin.
+    const px = grid ? grid.pitchX ?? grid.pitch : 78;
+    const pz = grid ? grid.pitchZ ?? grid.pitch : 78;
+    shader.uniforms.uPitch = { value: new THREE.Vector4(px, pz, grid ? grid.offX ?? 0 : 0, grid ? grid.offZ ?? 0 : 0) };
+    shader.uniforms.uHalf = { value: new THREE.Vector2(grid ? grid.halfX ?? grid.half : 9, grid ? grid.halfZ ?? grid.half : 9) };
     shader.uniforms.uGridExt = { value: new THREE.Vector4(grid ? grid.x0 : 0, grid ? grid.x1 : 0, grid ? grid.z0 : 0, grid ? grid.z1 : 0) };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${WORLD_VERTEX_PARS}`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n${WORLD_VERTEX}`);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${WORLD_VERTEX_PARS}\nuniform vec3 uGrid;\nuniform vec4 uGridExt;\n${NOISE}`)
+      .replace('#include <common>', `#include <common>\n${WORLD_VERTEX_PARS}\nuniform vec3 uGrid;\nuniform vec4 uGridExt;\nuniform vec4 uPitch;\nuniform vec2 uHalf;\n${NOISE}`)
       .replace('#include <color_fragment>', low ? GROUND_FRAGMENT_LOW : GROUND_FRAGMENT);
     if (!low) shader.fragmentShader = shader.fragmentShader.replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nroughnessFactor = gRough;\nmetalnessFactor = gMetal;');
   };

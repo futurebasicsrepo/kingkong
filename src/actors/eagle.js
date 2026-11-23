@@ -87,6 +87,12 @@ export class Eagle extends Enemy {
     return !this.dead && this.state !== 'perch' && this.state !== 'enter';
   }
 
+  // Where the entrance cut looks: up at him on the City Hall tower.
+  cutFocus() {
+    const pl = this.game.world.places.perch;
+    return { x: pl.x, y: pl.y, z: pl.z, r: 78, dy: -6, look: 10, a: -0.75 };
+  }
+
   clearMarker() {
     if (this.marker) {
       this.marker.life = 0;

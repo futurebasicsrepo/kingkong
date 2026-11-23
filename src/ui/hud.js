@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { angDiff, clamp01 } from '../engine/util.js';
-
-const MAP = { x0: -640, x1: 452, z0: -400, z1: 400 };
+import { ORDINAL } from '../stops.js';
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
 const _v = new THREE.Vector3();
 
@@ -106,6 +105,17 @@ export class Hud {
 
   // Draws the parts of the map that never change, once.
   buildMap(world) {
+    // The box takes the city's shape: wide for Philadelphia, tall for Manhattan.
+    const MAP = (this.mapB = this.game.stop.map);
+    const aspect = (MAP.z1 - MAP.z0) / (MAP.x1 - MAP.x0);
+    const long = matchMedia('(pointer: coarse)').matches ? 100 : 176;
+    const cw = aspect > 1 ? Math.round(long / aspect) : long;
+    const ch = aspect > 1 ? long : Math.round(long * aspect);
+    this.map.style.width = cw + 'px';
+    this.map.style.height = ch + 'px';
+    this.map.width = cw * 2;
+    this.map.height = ch * 2;
+    this.mapCtx = this.map.getContext('2d');
     const w = this.map.width;
     const h = this.map.height;
     const cv = document.createElement('canvas');
@@ -124,9 +134,16 @@ export class Hud {
       g.fillRect(X(s.x - s.w / 2), Z(s.z - s.d / 2), s.w * this.sx, s.d * this.sz);
     }
     g.globalAlpha = 1;
+    g.fillStyle = '#2f80ba';
     for (const wz of world.waterZones) {
-      g.fillStyle = '#2f80ba';
-      g.fillRect(X(wz.x0), 0, (wz.x1 - wz.x0) * this.sx, h);
+      const z0 = Math.max(wz.z0 ?? -Infinity, MAP.z0);
+      const z1 = Math.min(wz.z1 ?? Infinity, MAP.z1);
+      if (z1 > z0) g.fillRect(X(wz.x0), Z(z0), (wz.x1 - wz.x0) * this.sx, Z(z1) - Z(z0));
+    }
+    for (const p of world.ponds || []) {
+      g.beginPath();
+      g.arc(X(p.x), Z(p.z), p.r * this.sx, 0, Math.PI * 2);
+      g.fill();
     }
     for (const b of world.bridges) {
       g.fillStyle = '#8d8a83';
@@ -150,7 +167,7 @@ export class Hud {
     // Landmarks.
     const P = world.places;
     g.fillStyle = '#f3eee4';
-    for (const p of [P.cityHall, P.museum, P.liberty]) {
+    for (const p of this.game.stop.marks(P)) {
       g.beginPath();
       g.arc(X(p.x), Z(p.z), 5, 0, Math.PI * 2);
       g.fill();
@@ -202,6 +219,7 @@ export class Hud {
   drawMap(game) {
     if (!this.mapStatic) return;
     const g = this.mapCtx;
+    const MAP = this.mapB;
     const X = (x) => (x - MAP.x0) * this.sx;
     const Z = (z) => (z - MAP.z0) * this.sz;
     g.drawImage(this.mapStatic, 0, 0);
@@ -350,7 +368,7 @@ export class Screens {
 
   title() {
     return `<div class="title">
-        <small>STOP ONE: PHILADELPHIA</small>
+        <small>STOP ${ORDINAL[this.game.stopIndex]}: ${this.game.stop.name.toUpperCase()}</small>
         <h1>SILVERBACK</h1>
         <h2>WORLD TOUR</h2>
         <p>One very large ape. Eight cities. A lot of animals who had it coming.</p>
@@ -382,11 +400,11 @@ export class Screens {
   tour({ cities, level }) {
     const cards = cities
       .map(
-        (c, i) => `<button class="stop ${c.open ? 'open' : 'locked'}" ${c.open ? 'data-act="start"' : 'disabled'}>
-          <i>${String(i + 1).padStart(2, '0')}</i>
+        (c, i) => `<button class="stop ${c.open ? 'open' : 'locked'} ${c.here ? 'here' : ''}" ${c.open ? `data-act="start:${c.id}"` : 'disabled'}>
+          <i>${String(i + 1).padStart(2, '0')}${c.cleared ? ' &#10003;' : ''}</i>
           <b>${c.name}</b>
           <span>${c.rival}</span>
-          <em>${c.open ? 'PLAY NOW' : 'COMING SOON'}</em>
+          <em>${c.open ? (c.cleared ? 'PLAY AGAIN' : 'PLAY NOW') : 'COMING SOON'}</em>
         </button>`
       )
       .join('');
@@ -422,22 +440,23 @@ export class Screens {
     return `<div class="panel"><small>${this.game.player.name.toUpperCase()} IS DOWN</small><h2>KNOCKED OUT</h2><p>Shake it off. The tour is not over.</p><button class="big" data-act="retry">GET UP</button><button data-act="quit">Quit to title</button></div>`;
   }
 
-  win({ stats, next, level, golds }) {
+  win({ stats, stop, n, next, level, golds, goldName }) {
     const m = Math.floor(stats.time / 60);
     const s = String(Math.floor(stats.time % 60)).padStart(2, '0');
-    return `<div class="panel win"><small>STOP ONE CLEARED</small><h2>PHILADELPHIA IS YOURS</h2>
+    const ready = next && next.build;
+    return `<div class="panel win"><small>STOP ${n} CLEARED</small><h2>${stop.name.toUpperCase()} IS YOURS</h2>
         <div class="stats">
           <div><b>${stats.score.toLocaleString()}</b><span>Score</span></div>
           <div><b>${m}:${s}</b><span>Time</span></div>
           <div><b>${stats.kos}</b><span>Animals battered</span></div>
           <div><b>${stats.bestCombo}</b><span>Best combo</span></div>
-          <div><b>${stats.gold}/${golds}</b><span>Golden pretzels</span></div>
+          <div><b>${stats.gold}/${golds}</b><span>${goldName}</span></div>
           <div><b>${level}</b><span>Difficulty</span></div>
           <div><b>${stats.buildings}</b><span>Buildings flattened</span></div>
           <div><b>$${Math.round(stats.bill).toLocaleString()}</b><span>Damage bill</span></div>
         </div>
-        <p>Next stop: <b>${next}</b>. Coming soon.</p>
-        <button class="big" data-act="again">PLAY AGAIN</button><button data-act="roam">Keep roaming Philly</button>
+        <p>Next stop: <b>${next ? next.name : 'home'}</b>.${ready ? '' : ' Coming soon.'}</p>
+        ${ready ? '<button class="big" data-act="next">NEXT STOP</button><button data-act="again">Play again</button>' : '<button class="big" data-act="again">PLAY AGAIN</button>'}<button data-act="roam">${stop.roam}</button>
       </div>`;
   }
 }
