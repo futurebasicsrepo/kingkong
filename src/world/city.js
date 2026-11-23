@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { GEO, MeshBuilder, staticMaterial, detail } from '../engine/build.js';
-import { buildingMaterial, groundMaterial, foliageMaterial } from '../engine/materials.js';
+import { buildingMaterial, groundMaterial, foliageMaterial, simpleMaterial, sharedUniforms } from '../engine/materials.js';
 import { clamp, clamp01, lerp, smooth } from '../engine/util.js';
+import { CityLife } from './life.js';
 
 const CELL = 40;
 const cellKey = (ix, iz) => ix + 512 + (iz + 512) * 1024;
@@ -13,14 +14,6 @@ const _s = new THREE.Vector3();
 const _c = new THREE.Color();
 const UP = new THREE.Vector3(0, 1, 0);
 const RUBBLE = new THREE.Color(0x6f6a63);
-
-// Small things (paint, trunks, lamps, cars) are physically based on 'high'
-// and plain diffuse on phones, where their shine would not be worth its cost.
-const simpleMaterial = (opts) => {
-  if (!detail.low) return new THREE.MeshStandardMaterial(opts);
-  const { roughness, metalness, ...rest } = opts;
-  return new THREE.MeshLambertMaterial(rest);
-};
 
 // A city is a flat piece of land with rivers, a lot of box buildings drawn as
 // instances, and a few hand-built landmarks. This class owns the parts every
@@ -58,6 +51,42 @@ export class City {
     this.heightZones = [];
     this.mapFeatures = [];
     this.decor = new MeshBuilder();
+    // Traffic, fountains, flags, birds, murals, signs: see life.js.
+    this.life = new CityLife(this);
+  }
+
+  addLane(...a) {
+    this.life.addLane(...a);
+  }
+  addFountain(...a) {
+    this.life.addFountain(...a);
+  }
+  addVent(...a) {
+    this.life.addVent(...a);
+  }
+  addLeaves(...a) {
+    this.life.addLeaves(...a);
+  }
+  addBeacon(...a) {
+    this.life.addBeacon(...a);
+  }
+  addFlag(...a) {
+    this.life.addFlag(...a);
+  }
+  addFlock(...a) {
+    this.life.addFlock(...a);
+  }
+  addMural(...a) {
+    this.life.addMural(...a);
+  }
+  addSign(...a) {
+    this.life.addSign(...a);
+  }
+
+  // Optional, once a frame: where the big thing is. Traffic brakes for it
+  // and birds scatter from it. The city works without it.
+  setStomper(x, z) {
+    this.life.setStomper(x, z);
   }
 
   // ---- colliders -------------------------------------------------------
@@ -285,8 +314,8 @@ export class City {
   // hydrant, shelter). It has no collision; it just folds flat when something
   // big walks over it.
   addProp(kind, x, z, rot = 0) {
-    // Phones get the lamps and nothing else.
-    if (detail.low && kind !== 'lamp') return;
+    // Phones get the lamps and the market stalls, and nothing else.
+    if (detail.low && kind !== 'lamp' && kind !== 'stall') return;
     this.propCount[kind] = (this.propCount[kind] || 0) + 1;
     const p = { kind, x, z, rot, down: false, idx: this.propCount[kind] - 1 };
     this.props.push(p);
@@ -395,10 +424,19 @@ export class City {
       const along = w < d;
       const cx = (along ? 0.3 : 0.32) * w * (rnd() < 0.5 ? -1 : 1);
       const cz = (along ? 0.3 : 0.3) * d * (rnd() < 0.5 ? -1 : 1);
-      put(cx, cz, 1.3, 1.3, 1.6 + rnd() * 0.8, b.baseColor.clone().multiplyScalar(0.62).getHex());
+      // Sooty brick, a stone cap and a clay pot.
+      const ch = 1.6 + rnd() * 0.8;
+      const soot = b.baseColor.clone().lerp(_c.set(0x5a4c44), 0.6).multiplyScalar(0.8).getHex();
+      put(cx, cz, 1.3, 1.3, ch, soot);
+      const yy = y;
+      y = yy + ch;
+      put(cx, cz, 1.6, 1.6, 0.22, 0x8f8a80);
+      y = yy + ch + 0.22;
+      put(cx, cz, 0.5, 0.5, 0.55, 0x8a5a44);
+      y = yy;
       if (rnd() < 0.45) put(-cx * 0.4, -cz * 0.5, 1.8, 1.8, 0.7, 0x55585c);
     } else if (small < 22) {
-      put((rnd() - 0.5) * w * 0.4, (rnd() - 0.5) * d * 0.4, 3.4, 4.2, 2.9, b.baseColor.clone().multiplyScalar(0.7).getHex());
+      put((rnd() - 0.5) * w * 0.4, (rnd() - 0.5) * d * 0.4, 3.4, 4.2, 2.9, b.baseColor.clone().lerp(_c.set(0x6a655e), 0.55).multiplyScalar(0.85).getHex());
       if (rnd() < 0.7) put((rnd() - 0.5) * w * 0.55, (rnd() - 0.5) * d * 0.55, 2.4, 2.4, 1.5, steel[Math.floor(rnd() * 4)]);
     } else {
       put((rnd() - 0.5) * w * 0.2, (rnd() - 0.5) * d * 0.2, w * (0.34 + rnd() * 0.16), d * (0.3 + rnd() * 0.16), 3.2 + rnd() * 2.4, steel[Math.floor(rnd() * 4)]);
@@ -504,6 +542,34 @@ export class City {
       const list = this.props.filter((p) => p.kind === kind);
       const mesh = new THREE.InstancedMesh(GEO[kind](), simpleMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.5 }), list.length);
       mesh.frustumCulled = false;
+      if (kind === 'signal') {
+        // The lamps take turns: red, then green, a moment of amber. The two
+        // signals at a junction face different streets, so they run half a
+        // cycle apart.
+        mesh.material.onBeforeCompile = (shader) => {
+          shader.uniforms.uTime = sharedUniforms.uTime;
+          shader.vertexShader = shader.vertexShader
+            .replace('#include <common>', '#include <common>\nvarying float vSigPhase;')
+            .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSigPhase = instanceMatrix[0].x > 0.0 ? 0.0 : 0.5;');
+          shader.fragmentShader = shader.fragmentShader
+            .replace('#include <common>', '#include <common>\nvarying float vSigPhase;\nuniform float uTime;')
+            .replace(
+              '#include <emissivemap_fragment>',
+              `#include <emissivemap_fragment>
+              {
+                float ph = fract(uTime / 14.0 + vSigPhase);
+                vec3 lc = vColor.rgb;
+                float red = step(lc.g * 3.0, lc.r) * step(0.2, lc.r);
+                float green = step(lc.r * 2.0, lc.g) * step(0.02, lc.g);
+                float amber = step(lc.b * 4.0, lc.g) * step(lc.g * 1.5, lc.r) * (1.0 - red);
+                totalEmissiveRadiance += vec3(1.0, 0.1, 0.05) * red * step(ph, 0.46) * 1.6;
+                totalEmissiveRadiance += vec3(0.1, 1.0, 0.3) * green * step(0.5, ph) * 1.4;
+                totalEmissiveRadiance += vec3(1.0, 0.6, 0.05) * amber * step(0.46, ph) * step(ph, 0.5) * 1.6;
+              }`
+            );
+        };
+        mesh.material.customProgramCacheKey = () => 'city-signal';
+      }
       this.meshes[kind] = mesh;
       for (const p of list) this.writeProp(p);
       this.group.add(mesh);
@@ -511,6 +577,7 @@ export class City {
 
     const decor = this.decor.build(staticMaterial());
     this.group.add(decor);
+    this.life.build();
   }
 
   writeBuilding(b) {
@@ -613,6 +680,7 @@ export class City {
         b.state = 'falling';
         b.t = 0;
         for (const bc of b.colliders) bc.dead = true;
+        if (b.onFall) for (const fn of b.onFall) fn();
         out.destroyed.push(b);
       } else {
         b.color.copy(b.baseColor).multiplyScalar(0.55 + 0.45 * (b.hp / b.maxHp));
@@ -624,6 +692,7 @@ export class City {
 
   // Flattens trees and returns cars near a point, for whoever is stomping by.
   trample(x, z, r, onTree, onCar) {
+    this.life.trample(x, z, r, onCar);
     const ix0 = Math.floor((x - r) / CELL);
     const ix1 = Math.floor((x + r) / CELL);
     const iz0 = Math.floor((z - r) / CELL);
@@ -666,6 +735,7 @@ export class City {
   }
 
   update(dt) {
+    this.life.update(dt);
     for (const o of this.animating) {
       if (o.flat !== undefined) {
         o.flat = Math.min(1, o.flat + dt * 6);

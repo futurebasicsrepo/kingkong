@@ -110,14 +110,15 @@ export const GEO = {
         return mb.geometry();
       }
       mb.box(1.86, 0.16, 3.0, 0, 0.82, -0.25, 0xffffff);
-      mb.box(1.62, 0.09, 1.9, 0, 1.47, -0.3, 0xffffff);
-      for (const sx of [-1, 1]) for (const z of [0.72, -1.3]) mb.box(0.07, 0.55, 0.09, sx * 0.79, 0.95, z, 0xffffff);
+      mb.box(1.3, 0.08, 1.95, 0, 1.47, -0.3, 0xffffff);
       return mb.geometry();
     }),
   carCabin: () =>
     cached('carCabin' + detail.low, () => {
       const mb = new MeshBuilder();
-      mb.box(1.56, 0.65, 2.25, 0, 0.82, -0.3, 0x141c24);
+      // The glasshouse leans in toward the roof, so screens and pillars slope.
+      if (detail.low) mb.box(1.56, 0.65, 2.25, 0, 0.82, -0.3, 0x141c24);
+      else mb.add(GEO.frustum(0.76), 0x141c24, 0, 0.84, -0.3, 1.7, 0.64, 2.75);
       if (detail.low) {
         // Two axle-wide blocks stand in for four tyres.
         for (const z of [1.42, -1.42]) mb.box(1.94, 0.66, 0.66, 0, 0.03, z, 0x0c0c0d);
@@ -133,6 +134,52 @@ export const GEO = {
         mb.box(0.42, 0.13, 0.05, sx * 0.62, 0.62, 2.25, 0xf2ecd2);
         mb.box(0.4, 0.12, 0.05, sx * 0.64, 0.66, -2.25, 0x9c1414);
       }
+      return mb.geometry();
+    }),
+
+  // A city bus, split like the car: the paintwork takes the instance colour.
+  busBody: () =>
+    cached('busBody' + detail.low, () => {
+      const mb = new MeshBuilder();
+      mb.box(2.7, 2.55, 10.6, 0, 0.5, 0, 0xffffff);
+      if (!detail.low) mb.box(2.1, 0.3, 3.2, 0, 3.05, -1.6, 0xffffff);
+      return mb.geometry();
+    }),
+  busCabin: () =>
+    cached('busCabin' + detail.low, () => {
+      const mb = new MeshBuilder();
+      const glass = 0x141c24;
+      for (const sx of [-1, 1]) {
+        mb.box(0.08, 0.95, 9.2, sx * 1.36, 1.85, -0.3, glass);
+        mb.box(0.08, 0.3, 10.4, sx * 1.37, 1.3, 0, 0x1f7a78);
+      }
+      mb.box(2.4, 1.15, 0.08, 0, 1.7, 5.31, glass);
+      mb.box(2.3, 0.8, 0.08, 0, 1.9, -5.31, glass);
+      if (detail.low) {
+        for (const z of [3.4, -3.2]) mb.box(2.76, 0.9, 0.9, 0, 0.03, z, 0x0c0c0d);
+        return mb.geometry();
+      }
+      for (const z of [3.5, -3.3]) {
+        mb.add(GEO.cyl(8), 0x0c0c0d, 1.42, 0.5, z, 0.5, 0.36, 0.5, 0, 0, Math.PI / 2);
+        mb.add(GEO.cyl(8), 0x0c0c0d, -1.06, 0.5, z, 0.5, 0.36, 0.5, 0, 0, Math.PI / 2);
+      }
+      mb.box(1.7, 0.34, 0.06, 0, 2.72, 5.32, 0xe0a020);
+      for (const sx of [-1, 1]) {
+        mb.box(0.4, 0.2, 0.06, sx * 0.95, 0.8, 5.32, 0xf2ecd2);
+        mb.box(0.36, 0.2, 0.06, sx * 0.95, 0.9, -5.32, 0x9c1414);
+      }
+      return mb.geometry();
+    }),
+
+  // A market stall: a trestle of produce under a striped canopy.
+  stall: () =>
+    cached('stall', () => {
+      const mb = new MeshBuilder();
+      mb.box(3.6, 0.9, 1.6, 0, 0, 0, 0x7a5a3a);
+      const produce = [0xb5352a, 0xd98a2b, 0x4f8a3d, 0xd9c23b];
+      for (let k = 0; k < 4; k++) mb.box(0.8, 0.35, 1.3, -1.35 + k * 0.9, 0.9, 0, produce[k]);
+      for (const x of [-1.8, 1.8]) for (const z of [-0.9, 0.9]) mb.box(0.1, 3.0, 0.1, x, 0, z, 0x2c2f33);
+      for (let k = 0; k < 6; k++) mb.box(0.68, 0.12, 2.5, -1.7 + k * 0.68, 3.0, 0.15, k % 2 ? 0xf2efe6 : 0xb3261c, 0, 0.12);
       return mb.geometry();
     }),
 

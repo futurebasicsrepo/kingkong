@@ -1065,6 +1065,8 @@ export class Game {
     }
 
     this.player.update(dt);
+    // Lets traffic brake and pigeons on the plazas scatter as the ape comes by.
+    if (this.world.setStomper) this.world.setStomper(this.player.pos.x, this.player.pos.z);
     for (const e of this.enemies) e.update(dt);
     // Keep animals on the ground from standing inside each other.
     for (let i = 0; i < this.enemies.length; i++) {

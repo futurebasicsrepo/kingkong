@@ -10,6 +10,7 @@ src/main.js           boots the game
 src/game.js           mission flow, combat rules, scoring, the frame loop
 src/actors/           the ape, raccoons, pigeons, the eagle boss (models, animation, behaviour)
 src/world/city.js     what every city shares: instanced buildings, collision, destruction
+src/world/life.js     what moves on its own: traffic, fountains, flags, steam, leaves, birds, murals, signs
 src/world/philadelphia.js   the Philadelphia map and landmarks
 src/engine/           renderer and sky, materials, effects, camera, input, synthesised sound
 src/ui/hud.js         HUD, minimap, touch controls, title / tour / pause / results screens
@@ -43,6 +44,8 @@ Other things to do:
 - **Pretzels** heal. Clearing an objective heals a little too.
 - **Golden pretzels.** Ten are hidden round the city, some on roofs and one on top of the tallest tower. They show as ringed gold dots on the map.
 - There is a secret on Independence Mall.
+
+The city moves: traffic runs on Broad, Market and the main cross streets (and can be kicked), fountains spray, Parkway flags wave, steam rises from street vents, leaves drift in the parks, pigeons on the plazas scatter when the ape comes near, and beacons blink on the tallest towers. Murals and corner shops dress the row-house streets, and Boathouse Row sits upriver of the Art Museum with its outlines lit.
 
 ## The tour
 

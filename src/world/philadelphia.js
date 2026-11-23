@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { City } from './city.js';
-import { GEO, MeshBuilder } from '../engine/build.js';
+import { GEO, MeshBuilder, detail } from '../engine/build.js';
 import { groundMaterial, waterMaterial } from '../engine/materials.js';
 import { mulberry32, distToSegment, lerp } from '../engine/util.js';
+import { SHOP_WORDS } from './life.js';
 
 // Philadelphia, squeezed to about a kilometre across but laid out the way the
 // real city is: Penn's street grid between two rivers, City Hall on the
@@ -230,16 +231,17 @@ export function buildPhiladelphia(scene) {
     }
   };
 
+  // A stone basin with a stepped pedestal; the water itself is thrown up by city.addFountain.
   const fountain = (x, z, r, jet) => {
-    d.cyl(r, 1.3, x, 0.3, z, 0xbdb6a6, 16);
-    d.cyl(r - 1.2, 0.3, x, 1.4, z, 0x2f5f78, 16);
-    d.cyl(r * 0.22, 3, x, 0.3, z, 0xa9a294, 8);
-    d.cone(r * 0.12, jet, x, 3.3, z, 0xd8f0ff, 6);
-    for (let k = 0; k < 5; k++) {
-      const a = (k / 5) * Math.PI * 2;
-      d.cone(r * 0.06, jet * 0.5, x + Math.cos(a) * r * 0.55, 1.5, z + Math.sin(a) * r * 0.55, 0xd8f0ff, 5);
-    }
+    d.cyl(r, 1.3, x, 0.3, z, 0xbdb6a6, 24);
+    d.cyl(r + 0.6, 0.35, x, 0.3, z, 0xa9a294, 24);
+    d.cyl(r - 1.2, 0.3, x, 1.4, z, 0x2f5f78, 20);
+    d.cyl(r * 0.3, 1.9, x, 0.3, z, 0xa9a294, 12, 0.78);
+    d.cyl(r * 0.2, 1.5, x, 2.2, z, 0xb7b0a2, 12, 0.6);
+    d.cyl(r * 0.26, 0.3, x, 3.7, z, 0xa9a294, 12, 1.2);
+    city.addFountain(x, 4.0, z, r, jet, 1.8);
   };
+  const AUTUMN = [0xd98a2b, 0xc8572a, 0xe0b23a, 0xb5522c, 0x9a7a2a];
 
   for (let i = -5; i <= 4; i++) {
     for (let j = -5; j <= 4; j++) {
@@ -249,6 +251,7 @@ export function buildPhiladelphia(scene) {
 
       if (zone === 'park' || zone === 'jfk' || zone === 'mall') {
         city.addSlab(b.x0, b.z0, b.x1, b.z1, zone === 'mall' ? COL.grassDark : COL.grass, 0.32);
+        city.addLeaves(b.x0, b.z0, b.x1, b.z1, zone === 'mall' ? 12 : 22, AUTUMN);
         if (zone === 'park') {
           parkTrees(b, 26);
           d.cyl(5, 0.5, b.cx, 0.32, b.cz, COL.plaza, 12);
@@ -315,6 +318,7 @@ export function buildPhiladelphia(scene) {
             bld = city.addBuilding(brick ? 'brick' : 'office', x, z, w, dd, h, { color });
           }
           dress(bld, ox, oz, brick);
+          if (brick && rng() < 0.3) city.addMural(bld, ox > 0 ? 2 : 3, 0, 6, Math.min(bld.d - 6, 15), Math.min(bld.h * 0.5, 17), Math.floor(rng() * 4), rng());
         }
         continue;
       }
@@ -326,6 +330,8 @@ export function buildPhiladelphia(scene) {
             const z = b.z0 + 15 + c * 30;
             const bld = city.addBuilding('brick', x, z, R(16, 19), R(22, 27), R(12, 22), { color: pickc(BRICK) });
             dress(bld, 0, c === 0 ? -1 : 1, true);
+            if (rng() < 0.3) city.addSign(bld, c === 0 ? 1 : 0, 0, 3.7, 9, 1.9, pickc(SHOP_WORDS));
+            if (a !== 1 && rng() < 0.18) city.addMural(bld, a === 0 ? 3 : 2, 0, 4.5, 16, Math.min(11, bld.h - 5.5), Math.floor(rng() * 4), rng());
           }
         }
         continue;
@@ -350,7 +356,14 @@ export function buildPhiladelphia(scene) {
             continue;
           }
           const h = R(9, 13.5);
-          city.addBuilding('brick', x, z, alongX ? 9.6 : 23, alongX ? 23 : 9.6, h, { color: pickc(BRICK), hp: 20 });
+          const house = city.addBuilding('brick', x, z, alongX ? 9.6 : 23, alongX ? 23 : 9.6, h, { color: pickc(BRICK), hp: 20 });
+          if (k === 0 || k === 5) {
+            // The end of a terrace: a blank side wall for a mural, and sometimes a corner shop.
+            const end = alongX ? (k === 0 ? 3 : 2) : k === 0 ? 1 : 0;
+            const front = alongX ? (row === 0 ? 1 : 0) : row === 0 ? 3 : 2;
+            if (rng() < 0.16) city.addMural(house, end, 0, 2.2, 15, Math.min(7, h - 3.4), Math.floor(rng() * 4), rng());
+            if (rng() < 0.22) city.addSign(house, front, 0, 3.25, 8, 1.7, pickc(SHOP_WORDS));
+          }
         }
       }
       if (!nearParkway(b.cx, b.cz, 30)) {
@@ -570,7 +583,8 @@ export function buildPhiladelphia(scene) {
           const px = x - uz * s * 13.6;
           const pz = z + ux * s * 13.6;
           d.cyl(0.22, 15, px, 0.3, pz, 0xd8d8d8, 5);
-          d.box(4.2, 2.6, 0.2, px + ux * 2.1, 12.2, pz + uz * 2.1, flags[f++ % flags.length], rot);
+          d.ball(0.35, px, 15.4, pz, 0xc9a23a);
+          city.addFlag(px, 13.6, pz, 4.6, 2.8, rot, flags[f++ % flags.length]);
         }
       }
     }
@@ -676,24 +690,79 @@ export function buildPhiladelphia(scene) {
     const z = b.cz + 2;
     city.addBuilding('brick', x, z, 44, 16, 13, { fixed: true, color: brick });
     for (const s of [-1, 1]) city.addBuilding('brick', x + s * 34, z, 14, 13, 9, { fixed: true, color: brick });
+    const slate = 0x5a6068;
+    const dark = 0x1d2023;
     const m = new MeshBuilder();
-    m.prism(18, 5, 45, x, 13, z, 0x5a6068, Math.PI / 2);
+    m.prism(18, 5, 45, x, 13, z, slate, Math.PI / 2);
     for (const s of [-1, 1]) {
-      m.prism(15, 3.5, 15, x + s * 34, 9, z, 0x5a6068, Math.PI / 2);
-      m.box(12, 5, 6, x + s * 22, 0, z, white);
+      m.prism(15, 3.5, 15, x + s * 34, 9, z, slate, Math.PI / 2);
+      m.box(14.4, 0.5, 13.4, x + s * 34, 8.6, z, white);
+      // The brick arcades that join the wings, with a white-trimmed arch each side.
+      m.box(12, 5.5, 6, x + s * 22, 0, z, brick);
+      m.box(12.4, 0.45, 6.4, x + s * 22, 5.5, z, white);
+      for (const f of [-1, 1]) {
+        m.box(3.4, 4.1, 0.3, x + s * 25.2, 0, z + f * 3.02, white);
+        m.box(2.6, 3.6, 0.36, x + s * 25.2, 0, z + f * 3.02, dark);
+      }
+      // A pair of chimneys at each gable end, joined at the top by an arch.
+      for (const cz of [-4.6, 4.6]) m.box(1.9, 8.2, 2.3, x + s * 20.6, 12.4, z + cz, brick);
+      m.box(1.9, 1.6, 11.5, x + s * 20.6, 18.9, z, brick);
+      m.box(2.2, 0.35, 11.8, x + s * 20.6, 20.5, z, white);
     }
     m.box(46, 0.8, 17.5, x, 12.6, z, white);
-    // The bell tower on the south side.
-    m.box(11, 26, 11, x, 0, z + 10, brick);
-    m.box(12.4, 1.2, 12.4, x, 26, z + 10, white);
-    m.box(8.5, 8, 8.5, x, 27.2, z + 10, white);
+    m.box(44.5, 0.4, 16.5, x, 6.95, z, white); // the belt course between the floors
+    for (const qx of [-1, 1]) for (const qz of [-1, 1]) m.box(0.7, 12.6, 0.7, x + qx * 21.9, 0, z + qz * 7.9, white); // quoins
+    // The north door: a white doorcase under a pediment.
+    m.box(5, 6.4, 0.7, x, 0, z - 8.3, white);
+    m.box(2.8, 4.8, 0.8, x, 0.2, z - 8.35, 0x3b2a20);
+    m.prism(5.8, 1.7, 0.9, x, 6.4, z - 8.35, white);
+    // A balustrade along the ridge.
+    for (const bz of [-1.8, 1.8]) {
+      m.box(30, 0.35, 0.35, x, 17.75, z + bz, white);
+      for (let k = -7; k <= 7; k++) m.box(0.3, 1.0, 0.3, x + k * 2.1, 16.9, z + bz, white);
+    }
+    // The tower on the south side.
+    const tz = z + 10;
+    m.box(11, 26, 11, x, 0, tz, brick);
+    for (const qx of [-1, 1]) for (const qz of [-1, 1]) m.box(0.8, 26, 0.8, x + qx * 5.2, 0, tz + qz * 5.2, white);
+    m.box(4.4, 7.4, 0.6, x, 0, tz + 5.6, white); // south door
+    m.box(2.8, 6, 0.7, x, 0.2, tz + 5.65, 0x3b2a20);
+    m.box(3.6, 7.6, 0.4, x, 10.2, tz + 5.55, white); // the tall arched window above it
+    m.box(2.6, 6.6, 0.5, x, 10.7, tz + 5.6, dark);
+    m.box(12.4, 1.2, 12.4, x, 26, tz, white);
+    // Square stage with a clock on every face and urns at the corners.
+    m.box(8.5, 8, 8.5, x, 27.2, tz, white);
     for (let k = 0; k < 4; k++) {
       const a = (k * Math.PI) / 2;
-      m.add(GEO.cyl(12), 0x2a2a2a, x + Math.sin(a) * 4.35, 31.2, z + 10 + Math.cos(a) * 4.35, 2.4, 0.3, 2.4, a, Math.PI / 2, 0);
+      const sx = Math.sin(a);
+      const sz = Math.cos(a);
+      m.add(GEO.cyl(16), dark, x + sx * 4.3, 31.2, tz + sz * 4.3, 2.75, 0.2, 2.75, a, Math.PI / 2, 0);
+      m.add(GEO.cyl(16), 0xf4efe2, x + sx * 4.42, 31.2, tz + sz * 4.42, 2.45, 0.2, 2.45, a, Math.PI / 2, 0);
+      m.box(0.22, 1.8, 0.12, x + sx * 4.58, 31.2, tz + sz * 4.58, dark, a, 0, 0.6); // hour hand
+      m.box(0.16, 2.2, 0.12, x + sx * 4.6, 31.2, tz + sz * 4.6, dark, a, 0, -0.9); // minute hand
     }
-    m.cyl(3.6, 6, x, 35.2, z + 10, white, 8);
-    m.cyl(2.6, 4, x, 41.2, z + 10, white, 8);
-    m.cone(2.4, 9, x, 45.2, z + 10, 0x5a6068, 8);
+    m.box(9.3, 0.6, 9.3, x, 35.2, tz, white);
+    for (const qx of [-1, 1]) for (const qz of [-1, 1]) {
+      m.cyl(0.5, 0.9, x + qx * 4.1, 35.8, tz + qz * 4.1, white, 8);
+      m.ball(0.55, x + qx * 4.1, 37.1, tz + qz * 4.1, white);
+    }
+    // The octagonal belfry, open on every side, then the cupola and spire.
+    m.cyl(3.6, 6, x, 35.2, tz, white, 8);
+    for (let k = 0; k < 8; k++) {
+      const a = (k * Math.PI) / 4 + Math.PI / 8;
+      m.box(1.5, 3.9, 0.4, x + Math.sin(a) * 3.34, 36.3, tz + Math.cos(a) * 3.34, dark, a);
+    }
+    m.cyl(3.9, 0.5, x, 41.2, tz, white, 8);
+    m.cyl(2.6, 3.6, x, 41.7, tz, white, 8);
+    for (let k = 0; k < 8; k++) {
+      const a = (k * Math.PI) / 4 + Math.PI / 8;
+      m.box(0.9, 2.2, 0.3, x + Math.sin(a) * 2.42, 42.3, tz + Math.cos(a) * 2.42, dark, a);
+    }
+    m.dome(2.7, 2.6, x, 45.3, tz, white, 12);
+    m.cyl(0.8, 1.4, x, 47.6, tz, white, 8);
+    m.cone(0.62, 4.6, x, 49, tz, slate, 8);
+    m.ball(0.38, x, 53.8, tz, 0xc9a23a);
+    m.box(1.8, 0.12, 0.12, x, 54.7, tz, 0xc9a23a);
     d.merge(m);
     city.addCollider(x, z + 10, 11, 11, 50);
     for (let t = b.x0 + 4; t < b.x1; t += 12) tree(t, b.z1 - 5, 0.9);
@@ -716,16 +785,51 @@ export function buildPhiladelphia(scene) {
   {
     const x = PITCH;
     const z = -117;
-    const red = 0xc0392b;
+    const red = 0xb8302a;
+    const gold = 0xd9a92e;
+    const blue = 0x2a5fa8;
+    const green = 0x1f7a5c;
+    const tile = 0x2b6e4f;
+    const eave = 0x1d5a41;
+    // A roof of glazed tiles with the corners swept up, as on a real paifang.
+    const roof = (w, len, h, y, ridge) => {
+      d.box(len + 1.2, 0.5, w + 0.6, x, y - 0.4, z, eave);
+      d.prism(w, h, len, x, y, z, tile, Math.PI / 2);
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) d.add(GEO.cone(5), eave, x + sx * (len / 2 + 0.2), y - 0.3, z + sz * (w / 2), 0.42, 2.3, 0.42, 0, sz * 0.7, -sx * 0.95);
+      d.box(len - 2, 0.6, 0.8, x, y + h - 0.2, z, eave);
+      for (const sx of [-1, 1]) d.add(GEO.cone(5), gold, x + sx * (len / 2 - 1.2), y + h + 0.2, z, 0.38, 1.7, 0.38, 0, 0, -sx * 0.5);
+      if (ridge) d.ball(0.75, x, y + h + 0.9, z, gold);
+    };
+    // A row of painted brackets under the eaves.
+    const brackets = (len, y) => {
+      for (let k = -Math.floor(len / 2.2); k <= Math.floor(len / 2.2); k++) d.box(1.1, 1.1, 2.9, x + k * 2.2, y, z, k % 2 ? red : gold);
+    };
     for (const s of [-1, 1]) {
-      d.box(2.6, 21, 2.6, x + s * 10.4, 0, z, red);
-      d.box(4, 1.5, 4, x + s * 10.4, 0, z, 0x8d8a83);
+      d.box(4.4, 1.2, 4.4, x + s * 10.4, 0, z, 0x8d8a83);
+      d.box(3.6, 1.0, 3.6, x + s * 10.4, 1.2, z, 0x9d9a93);
+      d.box(2.6, 19, 2.6, x + s * 10.4, 2.2, z, red);
+      d.box(3.0, 0.5, 3.0, x + s * 10.4, 13.5, z, gold);
+      // Small roofs over the side bays.
+      d.box(5.4, 0.45, 4.2, x + s * 13.4, 14.6, z, eave);
+      d.prism(4.0, 1.6, 5.0, x + s * 13.4, 15, z, tile, Math.PI / 2);
     }
-    d.box(27, 2.2, 2.2, x, 21, z, 0x2d6fb5);
-    d.box(25, 1.4, 1.8, x, 17.6, z, 0xe2b93b);
-    d.prism(8, 3.4, 32, x, 23.2, z, 0x2e7d5b, Math.PI / 2);
-    d.box(14, 2.4, 2, x, 26.2, z, red);
-    d.prism(7, 3, 19, x, 28.6, z, 0x2e7d5b, Math.PI / 2);
+    // The painted beams and the name board.
+    d.box(23, 1.3, 1.9, x, 15.4, z, blue);
+    d.box(23.2, 0.28, 2.0, x, 16.7, z, gold);
+    for (let k = -5; k <= 5; k++) d.box(1.6, 1.0, 2.05, x + k * 2.05, 15.55, z, k % 2 ? green : blue);
+    d.box(7.4, 3.2, 2.2, x, 16.7, z, gold);
+    d.box(6.4, 2.4, 2.3, x, 17.1, z, blue);
+    d.box(27, 2.2, 2.3, x, 19.9, z, green);
+    d.box(27.2, 0.3, 2.4, x, 19.8, z, gold);
+    d.box(27.2, 0.3, 2.4, x, 22.0, z, gold);
+    for (let k = -6; k <= 6; k++) d.box(1.8, 1.6, 2.4, x + k * 2.1, 20.2, z, k % 2 ? blue : red);
+    brackets(26, 22.3);
+    roof(9.2, 32, 3.6, 23.6, false);
+    // The upper tier.
+    d.box(13.5, 2.6, 2.0, x, 27.2, z, red);
+    d.box(5.2, 2.0, 2.15, x, 27.5, z, gold);
+    brackets(12, 29.8);
+    roof(7.2, 19, 3.0, 30.8, true);
   }
 
   // ---- Benjamin Franklin Bridge -------------------------------------------
@@ -797,25 +901,88 @@ export function buildPhiladelphia(scene) {
     seg(x0, g.z, 4, 96);
     seg(x1, (z0 + g.z - 13) / 2, 4, g.z - 13 - z0);
     seg(x1, (z1 + g.z + 13) / 2, 4, z1 - g.z - 13);
+    const iron = 0x22302a;
     for (const s of [-1, 1]) {
-      d.box(6, 15, 6, x1, 0, g.z + s * 14.5, 0x8a7f6d);
-      d.cone(4.6, 3, x1, 15, g.z + s * 14.5, 0x3f6b52, 4, Math.PI / 4);
+      // Brick gate piers with stone dressings and a lantern on top.
+      const pz = g.z + s * 14.5;
+      d.box(7, 1.2, 7, x1, 0, pz, 0xa49c8c);
+      d.box(6, 13.4, 6, x1, 1.2, pz, 0x8e4a38);
+      for (const y of [5.2, 9.6]) d.box(6.4, 0.6, 6.4, x1, y, pz, 0xb8b0a0);
+      d.box(6.8, 0.9, 6.8, x1, 14.6, pz, 0xb8b0a0);
+      d.cone(4.4, 2.6, x1, 15.5, pz, 0x3f6b52, 4, Math.PI / 4);
+      d.cyl(0.35, 1.6, x1, 18.1, pz, iron, 6);
+      d.box(1.6, 1.8, 1.6, x1, 19.6, pz, 0xf1e6c4);
+      d.cone(1.2, 1.0, x1, 21.4, pz, iron, 4, Math.PI / 4);
     }
-    d.box(3, 3.4, 30, x1, 15.5, g.z, 0x3f6b52);
+    // A wrought-iron arch over the gate, with the name hung under it.
+    d.box(1.0, 1.0, 29, x1, 15.4, g.z, iron);
+    d.add(new THREE.TorusGeometry(14.5, 0.45, 6, 28, Math.PI), iron, x1, 15.6, g.z, 1, 0.55, 1, Math.PI / 2);
+    d.add(new THREE.TorusGeometry(12.6, 0.28, 6, 28, Math.PI), iron, x1, 15.6, g.z, 1, 0.5, 1, Math.PI / 2);
+    for (let k = -6; k <= 6; k++) {
+      if (Math.abs(k) < 4) continue;
+      const zz = k * 2.05;
+      const top = 15.6 + 8 * Math.sqrt(Math.max(0, 1 - (zz / 14.5) ** 2)) * 0.98;
+      d.box(0.22, top - 16.4, 0.22, x1, 16.4, g.z + zz, iron);
+    }
     for (const s of [-1, 1]) {
-      const sign = signPlane('ZOO', 16, 5.2, '#2f5a43', '#f3eee4');
-      sign.position.set(x1 + s * 1.9, 21.8, g.z);
+      const sign = signPlane('ZOO', 15, 4.8, '#2f5a43', '#f3eee4');
+      sign.position.set(x1 + s * 1.9, 19.4, g.z);
       sign.rotation.y = (s * Math.PI) / 2;
       city.group.add(sign);
     }
-    d.box(3.4, 6, 18, x1, 18.9, g.z, 0x2f5a43);
-    // The gate itself can be punched down.
-    city.gate = city.addBuilding('plain', x1, g.z, 2.4, 23, 10.5, { color: 0x3f6b52, hp: 26 });
+    d.box(3.4, 5.4, 16.4, x1, 16.7, g.z, 0x2f5a43);
+    // The gate itself can be punched down; its bars fall with it.
+    city.gate = city.addBuilding('plain', x1, g.z, 2.4, 23, 10.5, { color: iron, hp: 26 });
+    for (const f of [-1, 1]) {
+      for (let k = -6; k <= 6; k++) city.addAttachment(city.gate, f * 1.32, k * 1.72, 0.32, 0.32, 10.2, 0.2, 0x34463c);
+      for (const y of [1.2, 9.4]) city.addAttachment(city.gate, f * 1.36, 0, 0.3, 22.4, 0.4, y, 0x34463c);
+    }
     city.addSlab(x0 + 2, z0 + 2, x1 - 2, z1 - 2, 0x7a9150, 0.3);
     city.addSlab(x1 + 2, g.z - 12, -500, g.z + 12, COL.sidewalk, 0.27);
-    // The ape house: a rock den at the back of the yard.
+    // The ape house: a rock den at the back of the yard, boulders heaped
+    // round a dark cave mouth.
+    const zr = mulberry32(1874); // the year the zoo opened
+    const ROCK = [0x7c7f86, 0x8a857b, 0x6f726f, 0x938c80];
     const rocks = [[-604, g.z - 6, 9], [-606, g.z + 8, 7], [-598, g.z + 16, 5.5], [-600, g.z - 20, 6.5], [-608, g.z - 28, 5]];
-    for (const [rx, rz, rr] of rocks) d.ball(rr, rx, rr * 0.45, rz, 0x7c7f86, 1.2, 0.9, 1.1, 0);
+    for (const [rx, rz, rr] of rocks) {
+      d.add(GEO.ico(0), ROCK[0], rx, rr * 0.45, rz, rr * 1.2, rr * 0.9, rr * 1.1, zr() * 6, zr() * 0.5, zr() * 0.5);
+      for (let k = 0; k < 3; k++) {
+        const a = zr() * Math.PI * 2;
+        const s = rr * (0.35 + zr() * 0.3);
+        d.add(GEO.ico(0), ROCK[1 + (k % 3)], rx + Math.cos(a) * rr * 0.9, s * 0.4, rz + Math.sin(a) * rr * 0.9, s * 1.2, s * 0.85, s, zr() * 6, zr() * 0.6, zr() * 0.6);
+      }
+    }
+    d.ball(3.6, -593.6, 0.2, g.z - 5, 0x141416, 0.45, 1.15, 1.0, 1);
+    d.box(0.5, 0.6, 9, -592.6, 0, g.z - 5, 0x6f726f);
+    // A fenced paddock round the pond, and a keeper's hut by the south wall.
+    {
+      const fx0 = -570;
+      const fx1 = -540;
+      const fz0 = g.z + 13;
+      const fz1 = g.z + 41;
+      const post = (px, pz) => d.box(0.42, 3, 0.42, px, 0.3, pz, iron);
+      for (let px = fx0; px <= fx1; px += 3) {
+        post(px, fz0);
+        post(px, fz1);
+      }
+      for (let pz = fz0 + 3; pz < fz1; pz += 3) {
+        post(fx0, pz);
+        if (Math.abs(pz - (fz0 + fz1) / 2) > 3) post(fx1, pz);
+      }
+      for (const y of [1.3, 2.9]) {
+        d.box(fx1 - fx0, 0.22, 0.22, (fx0 + fx1) / 2, y, fz0, iron);
+        d.box(fx1 - fx0, 0.22, 0.22, (fx0 + fx1) / 2, y, fz1, iron);
+        d.box(0.22, 0.22, fz1 - fz0, fx0, y, (fz0 + fz1) / 2, iron);
+      }
+      for (let k = 0; k < 6; k++) {
+        const a = (k / 6) * Math.PI * 2 + 0.4;
+        d.add(GEO.ico(0), ROCK[k % 4], -555 + Math.cos(a) * 11.6, 0.4, g.z + 26 + Math.sin(a) * 11.6, 1.6, 0.9, 1.3, a, 0, 0);
+      }
+      d.box(9, 5.2, 6.5, -533, 0, g.z + 39, 0x8e4a38);
+      d.prism(7.2, 2.6, 10, -533, 5.2, g.z + 39, 0x3f6b52, Math.PI / 2);
+      d.box(1.8, 3.4, 0.3, -533, 0, g.z + 35.7, 0x2a2a2a);
+      city.addCollider(-533, g.z + 39, 9, 6.5, 7.8);
+    }
     d.cyl(11, 0.14, -555, 0.3, g.z + 26, 0x2f5f78, 12);
     for (const [tx, tz] of [[-540, g.z - 36], [-580, g.z - 38], [-590, g.z + 38], [-534, g.z + 36], [-562, g.z - 30]]) tree(tx, tz, 1.3);
 
@@ -823,9 +990,27 @@ export function buildPhiladelphia(scene) {
     const sx = -574;
     city.addBuilding('stone', sx, 6, 62, 124, 27, { fixed: true, color: 0xd2cab8 });
     d.box(40, 5, 100, sx, 27, 6, 0xc5bda9);
+    d.box(41, 0.7, 101, sx, 32, 6, 0xd8d0be);
     for (const s of [-1, 1]) {
-      for (let k = 0; k < 6; k++) d.cyl(2.2, 22, sx + s * 34.5, 0.2, -14 + k * 8, 0xe2dccb, 8);
-      d.box(8, 4.5, 50, sx + s * 34.5, 22.2, 6, 0xd2cab8);
+      // The two great porticoes: eight columns each, on bases and under
+      // capitals, carrying a deep entablature; tall windows behind them.
+      const cx = sx + s * 34.5;
+      for (let k = 0; k < 8; k++) {
+        const cz = -22 + k * 8;
+        d.box(5, 1.0, 5, cx, 0.2, cz, 0xcfc7b4);
+        d.cyl(2.0, 19, cx, 1.2, cz, 0xe6e0cf, 12, 0.88);
+        d.cyl(1.85, 1.4, cx, 20.2, cz, 0xe6e0cf, 12, 1.5);
+        d.box(5.6, 0.6, 5.6, cx, 21.6, cz, 0xdcd5c2);
+      }
+      d.box(8.6, 4.5, 62, cx, 22.2, 6, 0xd2cab8);
+      d.box(8.9, 0.5, 62.4, cx, 23.4, 6, 0xc2baa6);
+      d.box(9.6, 0.8, 63, cx, 26.7, 6, 0xdcd5c2);
+      for (let k = 0; k < 7; k++) {
+        const wz = -18 + k * 8;
+        d.box(0.4, 16, 5, sx + s * 31.15, 2.2, wz, 0x26323d);
+        d.box(0.5, 16, 0.3, sx + s * 31.2, 2.2, wz, 0xc9c1ad);
+        for (const y of [7.4, 12.6]) d.box(0.5, 0.3, 5, sx + s * 31.2, y, wz, 0xc9c1ad);
+      }
     }
     // University City blocks and a few houses north of the station.
     for (const [bx, bz, w, dd, h] of [[-590, 120, 34, 30, 30], [-548, 126, 30, 40, 22], [-584, 190, 40, 34, 46], [-545, 196, 26, 30, 18], [-590, 290, 36, 44, 26], [-546, 300, 28, 34, 36], [-572, 356, 60, 30, 20]]) {
@@ -844,6 +1029,74 @@ export function buildPhiladelphia(scene) {
     }
   }
 
+  // ---- Boathouse Row ------------------------------------------------------
+  // Upriver of the Art Museum on the east bank of the Schuylkill, just past
+  // the edge of play: a terrace of rowing clubs, each with its gables and
+  // corners picked out in lights.
+  {
+    const br = mulberry32(1860);
+    const WALL = [0xd9cdb2, 0xa9503c, 0xe8e4da, 0x7d8b6c, 0x9a8f80, 0xc9a46a, 0xe6dcc0, 0x8e4a38];
+    const ROOF = [0x3e4650, 0x6e3a30, 0x3f5a48, 0x4a4a52];
+    const bulbs = [];
+    const string = (ax, ay, az, bx, by, bz, gap) => {
+      const n = Math.max(1, Math.round(Math.hypot(bx - ax, by - ay, bz - az) / gap));
+      for (let k = 0; k <= n; k++) bulbs.push([ax + ((bx - ax) * k) / n, ay + ((by - ay) * k) / n, az + ((bz - az) * k) / n]);
+    };
+    const gap = detail.low ? 3 : 1.6;
+    const xa = -432;
+    let z = -404;
+    for (let i = 0; i < 11; i++) {
+      const w = 10 + br() * 6;
+      const depth = 13 + br() * 4;
+      const wallH = 6.5 + br() * 4;
+      const roofH = 4 + br() * 3;
+      const cz = z - w / 2;
+      const cx = xa + depth / 2;
+      const wall = WALL[Math.floor(br() * WALL.length)];
+      const trim = wall === 0xe8e4da ? 0x4a5a50 : 0xf0ece2;
+      d.box(depth, wallH, w, cx, 0, cz, wall);
+      d.box(depth + 0.4, 0.45, w + 0.4, cx, wallH - 0.2, cz, trim);
+      d.prism(w + 0.8, roofH, depth + 1, cx, wallH, cz, ROOF[Math.floor(br() * ROOF.length)], Math.PI / 2);
+      // The river front: a wide boat-bay door and windows in the gable.
+      d.box(0.4, 4.2, w * 0.55, xa - 0.1, 0, cz, 0x2a241f);
+      for (let k = -1; k <= 1; k++) if (w > 12 || k !== 0) d.box(0.4, 1.9, 1.3, xa - 0.1, wallH * 0.62, cz + k * w * 0.28, 0x22262b);
+      d.box(0.4, 1.6, 1.1, xa - 0.1, wallH + roofH * 0.25, cz, 0x22262b);
+      if (br() < 0.4) {
+        // A corner tower with a pyramid roof.
+        const tz = cz + (br() < 0.5 ? -1 : 1) * (w / 2 - 1.8);
+        d.box(3.6, wallH + 3, 3.6, xa + 2, 0, tz, wall);
+        d.cone(2.9, 3.4, xa + 2, wallH + 3, tz, ROOF[0], 4, Math.PI / 4);
+      }
+      // The dock, out over the water.
+      d.box(12, 0.5, w * 0.8, xa - 6, -0.7, cz, 0x7a6248);
+      // Lights: corners, eaves, both gables and the ridge.
+      const xb = xa + depth;
+      const top = wallH + roofH;
+      for (const ex of [xa, xb]) {
+        string(ex, wallH, cz - w / 2, ex, top, cz, gap);
+        string(ex, top, cz, ex, wallH, cz + w / 2, gap);
+      }
+      for (const ez of [cz - w / 2, cz + w / 2]) {
+        string(xa, wallH, ez, xb, wallH, ez, gap);
+        if (!detail.low) {
+          string(xa, 0.4, ez, xa, wallH, ez, gap);
+        }
+      }
+      string(xa, top, cz, xb, top, cz, gap);
+      z -= w + 1.5 + br() * 2;
+    }
+    // Clear any park trees standing where the boathouses now are.
+    for (const t of city.trees) if (t.x < -414 && t.z < -398) t.size = 0.0001;
+    const lamp = new THREE.InstancedMesh(GEO.ico(0), new THREE.MeshBasicMaterial({ color: 0xfff0c6 }), bulbs.length);
+    lamp.frustumCulled = false;
+    const mtx = new THREE.Matrix4();
+    bulbs.forEach(([bx, by, bz], i) => {
+      mtx.makeScale(0.24, 0.24, 0.24).setPosition(bx - 0.25, by + 0.12, bz);
+      lamp.setMatrixAt(i, mtx);
+    });
+    city.group.add(lamp);
+  }
+
   // ---- far-off city, beyond the edge of play ------------------------------
   for (let x = -400; x <= 400; x += 40) {
     for (const [z, hi] of [[-436, 30], [-490, 55], [436, 26], [490, 44], [550, 70]]) {
@@ -856,6 +1109,35 @@ export function buildPhiladelphia(scene) {
     city.addBuilding('brick', -680 + R(-8, 8), z, R(26, 36), R(26, 36), R(10, 30), { solid: false, color: pickc(BRICK) });
     if (rng() < 0.6) city.addBuilding('office', -760 + R(-10, 10), z + 12, R(28, 40), R(28, 40), R(20, 60), { solid: false, color: pickc(OFFICE) });
     if (rng() < 0.55) city.addBuilding('office', 690 + R(-20, 30), z, R(26, 40), R(26, 40), R(14, 60), { solid: false, color: pickc(OFFICE) });
+  }
+
+  // ---- life: traffic, steam, birds, beacons --------------------------------
+  {
+    const thin = detail.low ? 0.4 : 1;
+    const lane = (ax, az, bx, bz, n, speed, buses = 0) => city.addLane(ax, az, bx, bz, Math.max(2, Math.round(n * thin)), speed, detail.low ? Math.min(buses, n > 4 ? 1 : 0) : buses, CARS);
+    lane(0, -410, 0, -74, 4, 12, 1); // Broad Street, north of City Hall
+    lane(0, 74, 0, 410, 5, 12, 1); // and south
+    lane(-398, 0, -152, 0, 4, 11, 1); // Market Street, west
+    lane(74, 0, 396, 0, 5, 11, 1); // and east
+    lane(-156, -384, -156, 384, 6, 13);
+    lane(156, -384, 156, 384, 6, 13);
+    lane(-384, 156, 384, 156, 6, 12);
+    lane(-384, -156, 384, -156, 4, 12);
+
+    for (const [i, j] of [[-3, -1], [-2, 1], [-1, -2], [1, -1], [1, 1], [2, 0], [-3, 1], [0, 2], [2, -2], [-1, 2]]) {
+      const x = i * PITCH + 4.5;
+      const z = j * PITCH - 12;
+      d.box(1.7, 0.05, 1.7, x, 0.02, z, 0x18181a);
+      city.addVent(x, z);
+    }
+
+    const O = PLACES.oval;
+    city.addLeaves(O.x - 50, O.z - 46, O.x + 44, O.z + 40, 26, AUTUMN);
+    for (const [x, z, n] of [[-108, 34, 22], [-66, -40, 16], [O.x + 8, O.z + 10, 22], [-195, -168, 16], [273, -122, 22], [-195, 195, 18], [195, 117, 18], [-112, -130, 14]]) city.addFlock(x, z, n);
+
+    const tall = city.buildings.filter((b) => b.solid && !b.fixed).sort((a, b) => b.top - a.top).slice(0, detail.low ? 4 : 7);
+    for (const b of tall) city.addBeacon(b, b.x, b.top + 0.9, b.z);
+    city.addFountain(-555, 0.5, PLACES.zooGate.z + 26, 6, 5, 0.5);
   }
 
   city.finalize();
