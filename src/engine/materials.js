@@ -11,6 +11,14 @@ export const sharedUniforms = {
   uSunDir: { value: new THREE.Vector3(0.4, 0.6, 0.5).normalize() },
 };
 
+// Small things (paint, trunks, lamps, cars) are physically based on 'high'
+// and plain diffuse on phones, where their shine would not be worth its cost.
+export function simpleMaterial(opts) {
+  if (!detail.low) return new THREE.MeshStandardMaterial(opts);
+  const { roughness, metalness, ...rest } = opts;
+  return new THREE.MeshLambertMaterial(rest);
+}
+
 // Small noise library shared by all the procedural surfaces. The hashes use
 // no trig, so every GPU draws the same pattern.
 const NOISE = /* glsl */ `
@@ -1127,9 +1135,16 @@ export function foliageMaterial() {
     : new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.9, metalness: 0 });
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uSunDir = sharedUniforms.uSunDir;
+    shader.uniforms.uTime = sharedUniforms.uTime;
+    // On 'high' the crowns stir in the wind, each tree out of step with the next.
+    const sway = low
+      ? ''
+      : `float swayPh = instanceMatrix[3].x * 0.31 + instanceMatrix[3].z * 0.17;
+         transformed.x += sin(uTime * 1.25 + swayPh + position.y * 1.5) * 0.035 * (position.y + 0.9);
+         transformed.z += cos(uTime * 0.95 + swayPh * 1.3) * 0.028 * (position.y + 0.9);`;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>\n${WORLD_VERTEX_PARS}\nvarying vec3 vLeafPos;`)
-      .replace('#include <begin_vertex>', `#include <begin_vertex>\n${WORLD_VERTEX}\nvLeafPos = position;`);
+      .replace('#include <common>', `#include <common>\n${WORLD_VERTEX_PARS}\nvarying vec3 vLeafPos;\nuniform float uTime;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>\n${WORLD_VERTEX}\nvLeafPos = position;\n${sway}`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${WORLD_VERTEX_PARS}\nvarying vec3 vLeafPos;\nuniform vec3 uSunDir;\n${NOISE}`)
       .replace('#include <color_fragment>', low ? FOLIAGE_FRAGMENT_LOW : FOLIAGE_FRAGMENT);
