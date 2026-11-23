@@ -132,9 +132,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .stop.locked { opacity: 0.6; cursor: default; }
 @media (max-width: 720px) { .stops { grid-template-columns: repeat(2, 1fr); } }
 
+.panel.win { width: min(680px, 100%); }
 .panel { text-align: center; padding: 26px 30px 28px; background: rgba(12, 12, 13, 0.88); border: 2px solid rgba(243, 238, 228, 0.14); border-radius: 12px; width: min(560px, 100%); }
 .panel h2 { font-size: clamp(34px, min(8vw, 11vh), 72px); margin: 6px 0 10px !important; }
-.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0 6px; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0 6px; }
 .stats div { background: rgba(243, 238, 228, 0.07); border-radius: 6px; padding: 10px 6px; }
 .stats b { display: block; font: 400 26px var(--display); color: var(--gold); }
 .stats span { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
@@ -181,4 +182,100 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .select-bottom .big { margin: 0 !important; padding: 8px 30px 10px !important; font-size: 24px !important; }
   #screen .ape { min-width: 76px; padding: 6px 10px 7px; }
   .ape b { font-size: 17px; }
+}
+
+/* ---- difficulty and gold ---- */
+.levels { display: flex; gap: 8px; justify-content: center; margin-top: 14px; }
+#screen .levels button { margin: 0; padding: 7px 18px 8px; font: 400 18px var(--display); letter-spacing: 0.06em; color: var(--muted); }
+#screen .levels button.on { border-color: var(--flare); background: var(--flare); color: #fff; }
+#gold { margin-top: 6px; font: 400 15px var(--display); letter-spacing: 0.06em; color: var(--gold); text-shadow: 0 2px 0 rgba(0, 0, 0, 0.7); }
+#gold.pop { animation: pop 0.4s ease-out; transform-origin: left center; }
+@media (max-width: 720px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+
+/* ---- no page zoom, anywhere ---- */
+html, body { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
+#game, #hud, #stick, #btns, #btns button, #pause-btn { touch-action: none; }
+#screen { touch-action: pan-y; padding: max(16px, var(--safe-t)) max(16px, var(--safe-r)) max(16px, var(--safe-b)) max(16px, var(--safe-l)); }
+
+/* ---- menus ---- */
+.menu { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+#screen .menu button { margin: 0; width: 100%; }
+#screen .menu .big { grid-column: 1 / -1; }
+.steps { text-align: left; margin: 14px auto 6px; padding-left: 22px; max-width: 44ch; font-size: 15px; line-height: 1.45; }
+.steps li { margin-bottom: 8px; }
+.steps b { color: var(--gold); }
+
+/* ---- phones: keep the HUD out of the way of the city ---- */
+@media (pointer: coarse) {
+  .hud-tl { width: min(180px, 24vw); top: calc(8px + var(--safe-t)); }
+  .who b { font-size: 14px; }
+  .who span { font-size: 13px; }
+  .bar { height: 9px; margin-top: 3px; border-width: 1.5px; }
+  .bar.rage { height: 6px; }
+  .bar.rage em { font-size: 12px; top: -5px; }
+  #gold { font-size: 12px; margin-top: 4px; }
+
+  .hud-tc { top: calc(6px + var(--safe-t)); width: min(34vw, 340px); }
+  #objective { padding: 3px 10px 4px; border-left-width: 3px; background: rgba(12, 12, 13, 0.55); }
+  #objective b { font-size: 10px; }
+  #objective span { font-size: 12px; }
+  #objective.mini span { display: none; }
+  #compass { margin-top: 3px; font-size: 13px; }
+  #compass i { font-size: 14px; }
+
+  .hud-tr { top: calc(8px + var(--safe-t)); gap: 6px; }
+  #minimap { width: 100px; height: 73px; opacity: 0.8; border-width: 1.5px; }
+  #pause-btn { width: 34px; height: 34px; font-size: 14px; opacity: 0.85; }
+
+  #btns { width: 170px; height: 160px; right: calc(8px + var(--safe-r)); bottom: calc(8px + var(--safe-b)); }
+  #btns button { opacity: 0.62; border-width: 2px; font-size: 12px; }
+  #btns button.down { opacity: 1; }
+  #btns .b-punch { width: 84px; height: 84px; font-size: 16px; right: 0; bottom: 0; }
+  #btns .b-slam { width: 62px; height: 62px; right: 90px; bottom: 4px; }
+  #btns .b-jump { width: 62px; height: 62px; right: 8px; bottom: 92px; }
+  #btns .b-roar { width: 54px; height: 54px; right: 80px; bottom: 76px; opacity: 0.35; }
+  #hud.rage-ready #btns .b-roar { opacity: 1; }
+  #stick { width: 104px; height: 104px; margin: -52px 0 0 -52px; }
+  #stick-knob { width: 46px; height: 46px; }
+
+  #hint { bottom: calc(10px + var(--safe-b)); font-size: 12px; padding: 5px 12px; max-width: 44vw; white-space: normal; text-align: center; background: rgba(12, 12, 13, 0.6); }
+  #combo { top: 30%; right: calc(14px + var(--safe-r)); font-size: 13px; }
+  #combo b { font-size: 38px; }
+  #boss { top: calc(52px + var(--safe-t)); width: min(300px, 36vw); }
+  #boss .bar { height: 9px; }
+  .boss-name b { font-size: 14px; }
+  #toast { top: 22%; }
+  #toast b { font-size: clamp(28px, 11vh, 60px); }
+  #toast span { font-size: 12px; margin-top: 4px; }
+  #card { top: 26%; padding: 8px 28px 10px calc(18px + var(--safe-l)); border-left-width: 5px; }
+  #card b { font-size: clamp(30px, 13vh, 60px); }
+  #card span { font-size: 12px; }
+  #floaters span { font-size: 20px; }
+  #floaters span.big { font-size: 28px; }
+}
+
+/* ---- short screens (a phone on its side): menus must fit without scrolling ---- */
+@media (max-height: 480px) {
+  .panel { padding: 12px 18px 14px; width: min(600px, 100%); }
+  .panel h2 { font-size: clamp(26px, 10vh, 40px); margin: 0 0 6px !important; }
+  .panel .keys { display: none; }
+  #screen button { padding: 7px 14px; font-size: 14px; margin-top: 6px; }
+  #screen button.big { padding: 7px 30px 9px; font-size: 22px; box-shadow: 0 4px 0 #8f2408; }
+  #screen p { font-size: 14px; margin: 6px auto; }
+  .stats { gap: 6px; margin: 8px 0 4px; }
+  .stats div { padding: 5px 4px; }
+  .stats b { font-size: 19px; }
+  .stats span { font-size: 10px; }
+  .steps { font-size: 13px; margin: 6px auto 2px; }
+  .steps li { margin-bottom: 4px; }
+  .title h1 { font-size: clamp(44px, 26vh, 110px); }
+  .title h2 { font-size: clamp(18px, 8vh, 36px); }
+  .title p { font-size: 13px !important; margin: 6px auto !important; }
+  .title .keys { display: none; }
+  .tour h2 { font-size: clamp(26px, 11vh, 44px); margin-bottom: 8px !important; }
+  #screen .stop { padding: 7px 9px 7px; }
+  .stop b { font-size: 17px; }
+  .stop span { min-height: 0; font-size: 11px; }
+  .stop em { margin-top: 4px; font-size: 9px; }
+  .levels { margin-top: 8px; }
 }

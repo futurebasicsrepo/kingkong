@@ -18,8 +18,10 @@ export class ChaseCam {
     this.cine = null;
   }
 
-  snap(player) {
-    this.yaw = player.yaw;
+  // Jump straight to the chase position. keepYaw leaves the heading as set.
+  snap(player, keepYaw = false) {
+    if (!keepYaw) this.yaw = player.yaw;
+    this.manual = 0;
     this.target.set(player.pos.x, player.pos.y + 9, player.pos.z);
     this.curDist = this.wantDist;
   }

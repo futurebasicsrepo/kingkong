@@ -5,11 +5,11 @@ import { clamp, damp, dampAngle, rand } from '../engine/util.js';
 
 // ---- models --------------------------------------------------------------
 
-function buildRaccoon(thrower) {
+function buildRaccoon(thrower, chief = false) {
   const fur = 0x7b7e87;
   const dark = 0x202127;
   const light = 0xdcd8cf;
-  const scarf = thrower ? 0x2e8b57 : 0xc0392b;
+  const scarf = chief ? 0xd4af37 : thrower ? 0x2e8b57 : 0xc0392b;
   const rig = new Rig();
   const body = rig.joint('body', null, 0, 2.65, 0);
   rig.blob(body, fur, 0, 1.8, 0, 2.5, 2.9, 2.3);
@@ -38,6 +38,12 @@ function buildRaccoon(thrower) {
     const leg = rig.joint('leg' + side, body, s * 1.3, 0.1, 0);
     rig.blob(leg, fur, 0, -1.1, 0, 1.12, 1.5, 1.18);
     rig.blob(leg, dark, 0, -2.2, 0.7, 0.98, 0.45, 1.6);
+  }
+  if (chief) {
+    // A dustbin lid for a crown.
+    rig.on(head).cyl(2.1, 0.35, 0, 3.0, 0, 0x9aa0a6, 14);
+    rig.on(head).cyl(0.45, 0.55, 0, 3.35, 0, 0x7d838a, 8);
+    rig.on(body).add(new THREE.TorusGeometry(2.3, 0.22, 5, 14), 0xd4af37, 0, 3.3, 0.9, 1, 1, 1, 0, Math.PI / 2 - 0.5, 0);
   }
   // A fat ringed brush of a tail.
   const tail = rig.joint('tail', body, 0, 0.9, -1.9);
@@ -100,7 +106,9 @@ export class Enemy {
     this.pos.set(x, game.world ? game.world.groundHeight(x, z) : 0, z);
     this.vel = new THREE.Vector3();
     this.yaw = rand(Math.PI * 2);
-    this.hp = this.maxHp = cfg.hp;
+    const level = game.diff || { hp: 1, bossHp: 1, cool: 1 };
+    this.hp = this.maxHp = Math.round(cfg.hp * (cfg.kind === 'eagle' ? level.bossHp : level.hp));
+    this.pace = level.cool;
     this.radius = cfg.radius;
     this.height = cfg.height;
     this.kind = cfg.kind;
@@ -200,7 +208,7 @@ export class Enemy {
     this.root.rotation.y += this.spin.y * dt;
     this.root.rotation.z += this.spin.z * dt;
     const k = clamp(1 - (this.t - 0.9) / 0.7, 0, 1);
-    this.root.scale.setScalar(Math.max(0.001, k));
+    this.root.scale.setScalar(Math.max(0.001, k) * (this.size || 1));
     if (this.t > 1.6) {
       this.game.fx.twinkle(this.pos.x, this.pos.y, this.pos.z);
       this.remove = true;
@@ -250,7 +258,7 @@ export class Enemy {
     } else {
       this.think(dt);
       this.root.rotation.y = this.yaw;
-      this.root.scale.setScalar(this.scale);
+      this.root.scale.setScalar(this.scale * (this.size || 1));
     }
     if (this.flash > 0) this.rig.setFlash(this.flash, 0xffffff);
     else if (this.glow > 0) this.rig.setFlash(this.glow * 0.7, 0xff2a1a);
@@ -261,14 +269,53 @@ export class Enemy {
 // ---- raccoons: the Trash Pandas -------------------------------------------
 
 export class Raccoon extends Enemy {
-  constructor(game, x, z, thrower = false) {
-    super(game, x, z, { kind: thrower ? 'thrower' : 'raccoon', build: () => buildRaccoon(thrower), hp: thrower ? 32 : 44, radius: 3, height: 8 });
+  constructor(game, x, z, thrower = false, chief = false) {
+    super(game, x, z, {
+      kind: chief ? 'chief' : thrower ? 'thrower' : 'raccoon',
+      build: () => buildRaccoon(thrower, chief),
+      hp: chief ? 190 : thrower ? 32 : 44,
+      radius: chief ? 5 : 3,
+      height: chief ? 13.5 : 8,
+    });
+    // The chief is the same animal, most of twice the size, and he does not
+    // flinch at a jab.
+    this.chief = chief;
+    this.size = chief ? 1.7 : 1;
+    this.name = 'BIG BANDIT';
+    this.title = 'King of the Trash Pandas';
+    this.poundCool = rand(2, 3.5);
+    this.marker = null;
     this.thrower = thrower;
     this.strafe = Math.random() < 0.5 ? 1 : -1;
     this.arm = 0;
     this.lean = 0;
     this.throwCool = rand(1.5, 3);
     this.struck = false;
+  }
+
+  clearMarker() {
+    if (this.marker) {
+      this.marker.life = 0;
+      this.marker = null;
+    }
+  }
+
+  takeHit(h) {
+    // Light blows hurt the chief but do not stop what he is doing. On Hard,
+    // nobody can be jabbed out of a swing they have already started.
+    const set = this.game.diff && this.game.diff.armor && (this.state === 'windup' || this.state === 'attack');
+    if ((this.chief || set) && this.hurtable && !h.heavy && this.hp - h.dmg > 0) {
+      this.hp -= h.dmg;
+      this.flash = 1;
+      return true;
+    }
+    this.clearMarker();
+    return super.takeHit(h);
+  }
+
+  stun(seconds) {
+    this.clearMarker();
+    super.stun(this.chief ? seconds * 0.4 : seconds);
   }
 
   think(dt) {
@@ -279,7 +326,9 @@ export class Raccoon extends Enemy {
     const dist = Math.hypot(dx, dz) || 1;
     const nx = dx / dist;
     const nz = dz / dist;
-    let speed = 15;
+    let speed = this.chief ? 13 : 15;
+    const k = this.size;
+    this.poundCool -= dt;
     let armT = 0;
     let leanT = 0;
     this.wx = this.wz = 0;
@@ -297,7 +346,12 @@ export class Raccoon extends Enemy {
         this.scale = 1;
         this.face(p.pos.x, p.pos.z, 7, dt);
         if (!alive) break;
-        const want = this.thrower ? 34 : 7.5;
+        const want = this.thrower ? 34 : 7.5 * k;
+        if (this.chief && dist < 24 && this.poundCool <= 0) {
+          this.marker = g.fx.marker(this.pos.x, this.pos.z, 16, 0.9, this.pos.y);
+          this.setState('poundWind');
+          break;
+        }
         // An ape up on a roof is out of reach, so everyone starts throwing.
         const above = p.pos.y > this.pos.y + 7 && (p.onGround || p.state === 'climb');
         if ((this.thrower || above) && dist < 60 && (above || dist > 16) && this.throwCool <= 0) {
@@ -341,16 +395,16 @@ export class Raccoon extends Enemy {
         this.wz = Math.cos(this.yaw) * (this.t < 0.16 ? 1 : 0);
         speed = 34;
         if (!this.struck && this.t > 0.08) {
-          const hx = this.pos.x + Math.sin(this.yaw) * 4.5;
-          const hz = this.pos.z + Math.cos(this.yaw) * 4.5;
-          if (Math.hypot(p.pos.x - hx, p.pos.z - hz) < 7.2 && p.pos.y < this.pos.y + 7) {
+          const hx = this.pos.x + Math.sin(this.yaw) * 4.5 * k;
+          const hz = this.pos.z + Math.cos(this.yaw) * 4.5 * k;
+          if (Math.hypot(p.pos.x - hx, p.pos.z - hz) < 7.2 * k && p.pos.y < this.pos.y + 7 * k) {
             this.struck = true;
-            p.takeDamage(8, this.pos.x, this.pos.z, 20);
+            p.takeDamage(this.chief ? 13 : 8, this.pos.x, this.pos.z, this.chief ? 34 : 20);
           }
         }
         if (this.t > 0.55) {
           this.releaseToken();
-          this.cool = rand(0.8, 1.7);
+          this.cool = rand(0.8, 1.7) * this.pace;
           this.setState('chase');
         }
         break;
@@ -361,7 +415,21 @@ export class Raccoon extends Enemy {
         this.glow = 0.4 + Math.sin(this.t * 30) * 0.4;
         if (this.t > 0.6) {
           g.throwTrash(this, p.pos.x + p.vel.x * 0.5, p.pos.z + p.vel.z * 0.5);
-          this.throwCool = rand(2.6, 4.2);
+          this.throwCool = rand(2.6, 4.2) * this.pace;
+          this.setState('throwEnd');
+        }
+        break;
+      case 'poundWind':
+        // Both fists up, a red ring on the ground: jump, or get out of it.
+        armT = -3.0;
+        leanT = -0.35;
+        this.glow = 0.5 + Math.sin(this.t * 40) * 0.5;
+        if (this.t > 0.9) {
+          this.marker = null;
+          g.groundPound(this.pos.x, this.pos.z, 16, 0.9);
+          g.world.damageAt(this.pos.x, this.pos.z, 9, 25);
+          if (dist < 16.5 && p.pos.y < this.pos.y + 4) p.takeDamage(16, this.pos.x, this.pos.z, 40);
+          this.poundCool = rand(4, 6.5) * this.pace;
           this.setState('throwEnd');
         }
         break;
@@ -548,7 +616,7 @@ export class Pigeon extends Enemy {
         this.pos.y = damp(this.pos.y, Math.max(ground, this.restY || 0), 12, dt);
         if (this.t > this.stunT) {
           this.restY = 0;
-          this.cool = rand(2.2, 4.5);
+          this.cool = rand(2.2, 4.5) * this.pace;
           this.setState('hover');
         }
         break;

@@ -374,12 +374,14 @@ export class Ape {
 
       // Lean on a wall for a moment and he starts to climb it.
       let pushing = false;
-      if (wall && live && wishMag > 0.5 && (this.state === 'free' || this.state === 'air') && wall.h - this.pos.y > 3.5) {
+      const rise = wall ? wall.h - this.pos.y : 0;
+      if (wall && live && wishMag > 0.5 && (this.state === 'free' || this.state === 'air') && rise > 0.6) {
         const n = this.wallNormal(wall);
         if (n && wx * n.x + wz * n.z > 0.72) {
           pushing = true;
           this.pushT += dt;
-          if (this.pushT > (this.onGround ? 0.28 : 0.04)) this.startClimb(wall, n);
+          // A kerb-high ledge is hopped at once; a real wall takes a moment's lean.
+          if (this.pushT > (!this.onGround || rise < 5 ? 0.04 : 0.28)) this.startClimb(wall, n);
         }
       }
       if (!pushing) this.pushT = 0;
@@ -462,7 +464,7 @@ export class Ape {
     this.pushT = 0;
     this.attack = null;
     this.peakY = this.pos.y;
-    this.game.onClimbStart();
+    if (c.h - this.pos.y > 6) this.game.onClimbStart();
   }
 
   // Hand over hand up the side of a building: push toward the wall to go up,
@@ -590,6 +592,7 @@ export class Ape {
   takeDamage(dmg, fromX, fromZ, knock = 22) {
     if (this.invuln > 0 || this.state === 'roar' || this.state === 'dead' || this.victory) return false;
     const g = this.game;
+    dmg = Math.max(1, Math.round(dmg * ((g.diff && g.diff.dmg) || 1)));
     this.hp -= dmg;
     this.invuln = 0.75;
     this.flash = 1;

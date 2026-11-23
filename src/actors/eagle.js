@@ -113,7 +113,7 @@ export class Eagle extends Enemy {
       // Punched out of the sky mid-swoop.
       this.clearMarker();
       this.vel.set(this.dir.x * 30 + h.dx * 22, 16, this.dir.z * 30 + h.dz * 22);
-      this.stuckFor = 4.4;
+      this.stuckFor = 4.4 * ((g.diff && g.diff.stuck) || 1);
       this.setState('crash');
       g.onCounter(this);
     }
@@ -184,7 +184,8 @@ export class Eagle extends Enemy {
     const p = g.player;
     const w = g.world;
     const ground = w.groundHeight(this.pos.x, this.pos.z);
-    const quick = this.stage === 3 ? 0.72 : this.stage === 2 ? 0.86 : 1;
+    const level = g.diff || { quick: 1, stuck: 1 };
+    const quick = (this.stage === 3 ? 0.72 : this.stage === 2 ? 0.86 : 1) * level.quick;
     const alive = p.state !== 'dead' && !p.victory;
     this.glow = 0;
     let pitchT = 1.15;
@@ -202,6 +203,13 @@ export class Eagle extends Enemy {
         pitchT = 0.15;
         headT = 0.25;
         legT = 0;
+        if (this.taunt) {
+          // The entrance: wings out, beak open, screaming at the ape below.
+          this.mode = 'hover';
+          pitchT = 0.3;
+          headT = -0.35;
+          beakT = 1;
+        }
         break;
       }
       case 'enter': {
@@ -300,7 +308,7 @@ export class Eagle extends Enemy {
           g.groundPound(this.pos.x, this.pos.z, 18, 1.1);
           w.damageAt(this.pos.x, this.pos.z, 13, 40);
           if (Math.hypot(p.pos.x - this.pos.x, p.pos.z - this.pos.z) < 17.5 && p.pos.y < gy + 5) p.takeDamage(22, this.pos.x, this.pos.z, 46);
-          this.stuckFor = this.stage === 3 ? 2.7 : this.stage === 2 ? 3.1 : 3.5;
+          this.stuckFor = (this.stage === 3 ? 2.7 : this.stage === 2 ? 3.1 : 3.5) * level.stuck;
           this.vel.set(0, 0, 0);
           this.setState('stuck');
         }
